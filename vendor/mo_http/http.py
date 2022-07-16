@@ -29,7 +29,7 @@ from requests import Response, sessions
 from urllib3.util import url
 
 import mo_math
-from mo_dots import Data, Null, coalesce, is_list, set_default, unwrap, to_data, is_sequence
+from mo_dots import Data, Null, coalesce, is_list, set_default, to_data, is_sequence, from_data
 from mo_files import mimetype
 from mo_files.url import URL
 from mo_future import PY2, is_text, text
@@ -129,7 +129,7 @@ def request(method, url, headers=None, data=None, json=None, zip=None, retry=Non
             set_default(kwargs, DEFAULTS)
 
             # HEADERS
-            headers = unwrap(set_default(headers, default_headers, {'Accept-Encoding': 'compress, gzip'}))
+            headers = from_data(set_default(headers, default_headers, {'Accept-Encoding': 'compress, gzip'}))
             _to_ascii_dict(headers)
 
             # RETRY

@@ -421,7 +421,7 @@ def _get_attr(obj, path):
                 else:
                     # GET VARIABLE IN MODULE
                     output = __import__(
-                        obj.__name__ + str(".") + str(attr_name),
+                        f"{obj.__name__}.{str(attr_name)}",
                         globals(),
                         locals(),
                         [str(path[1])],

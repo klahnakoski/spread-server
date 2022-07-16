@@ -53,7 +53,7 @@ def argparse(defs, complain=True):
     return to_data(output)
 
 
-def read_settings(defs=None, filename=None, default_filename=None, complain=True):
+def read_config(defs=None, filename=None, default_filename=None, complain=True):
     """
     :param filename: Force load a file
     :param defs: more arguments you want to accept (see https://docs.python.org/3/library/argparse.html#argparse.ArgumentParser.add_argument)
@@ -81,18 +81,21 @@ def read_settings(defs=None, filename=None, default_filename=None, complain=True
         default_filename,
         "./config.json",
     )
-    settings_file = File(args.filename)
-    if settings_file.exists:
-        logger.info("Using {{filename}} for configuration", filename=settings_file.abspath)
+    config_file = File(args.filename)
+    if config_file.exists:
+        logger.info("Using {{filename}} for configuration", filename=config_file.abspath)
     else:
         logger.error(
             "Can not read configuration file {{filename}}",
-            filename=settings_file.abspath,
+            filename=config_file.abspath,
         )
 
-    settings = mo_json_config.get_file(settings_file)
+    settings = mo_json_config.get_file(config_file)
     settings.args = args
     return settings
+
+
+read_settings = read_config
 
 
 # snagged from https://github.com/pycontribs/tendo/blob/master/tendo/singleton.py (under licence PYTHON SOFTWARE FOUNDATION LICENSE VERSION 2)

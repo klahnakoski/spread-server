@@ -38,10 +38,7 @@ DEBUG = False
 
 def get_file(file):
     file = File(file)
-    if os.sep == "\\":
-        return get("file:///" + file.abspath)
-    else:
-        return get("file://" + file.abspath)
+    return get("file://" + file.abspath)
 
 
 def get(url):

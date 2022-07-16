@@ -1,0 +1,31 @@
+{
+	"flask": {
+		"host": "0.0.0.0",
+		"port": 5000,
+		"debug": false,
+		"threaded": true,
+		"processes": 1,
+//		"ssl_context": "adhoc",
+//		"allow_exit": true
+	},
+	"constants": {
+		"mo_http.http.default_headers": {
+			"Referer": "https://github.com/klahnakoski/spread-server/"
+		},
+		"mo_http.big_data.MAX_STRING_SIZE": 10000000,
+		"jx_sqlite.sql.sqlite.DEBUG": true,
+	},
+	"debug": {
+		"trace": true,
+		"cprofile": {
+			"enabled": false,
+			"filename": "./results/profile.tab"
+		},
+		"log": [
+			{
+				"log_type": "console"
+			}
+		]
+	}
+}
+

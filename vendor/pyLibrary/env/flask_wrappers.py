@@ -158,19 +158,23 @@ def dockerflow(flask_app, backend_check):
 VERSION_JSON = None
 
 
-def add_version(flask_app):
+def add_version(flask_app, github_url):
     """
     ADD ROUTING TO HANDLE REQUEST FOR /__version__
     :param flask_app: THE (Flask) APP
+    :param github_url: POINTER TO TREE WHERE WE CAN FIND COMMIT INFO: eg "https://github.com/mozilla/ActiveData/tree/"
     :return:
     """
+
+    github_url = URL(github_url)
+
     try:
         rev = coalesce(git.get_revision(), "")
-        branch = "https://github.com/mozilla/ActiveData/tree/" + coalesce(git.get_branch())
+        branch = github_url / coalesce(git.get_branch())
 
         version_info = value2json(
             {
-                "source": "https://github.com/mozilla/ActiveData/tree/" + rev,
+                "source": github_url / rev,
                 "branch": branch,
                 "commit": rev,
             },
@@ -197,7 +201,7 @@ def add_version(flask_app):
         Log.error("Problem setting up listeners for dockerflow", cause=e)
 
 
-def setup_flask_ssl(flask_app, flask_config):
+def setup_flask_ssl(app_name, flask_app, flask_config):
     """
     SPAWN A NEW THREAD TO RUN AN SSL ENDPOINT
     REMOVES ssl_context FROM flask_config BEFORE RETURNING
@@ -239,8 +243,8 @@ def setup_flask_ssl(flask_app, flask_config):
                 Log.error("Could not handle ssl context construction", cause=e)
 
     def runner(please_stop):
-        Log.warning(
-            "ActiveData listening on encrypted port {{port}}", port=ssl_flask.port
+        Log.alert(
+            "{{app}} listening on encrypted port {{port}}", app=app_name, port=ssl_flask.port
         )
         flask_app.run(**ssl_flask)
 
@@ -248,7 +252,8 @@ def setup_flask_ssl(flask_app, flask_config):
 
     if flask_config.ssl_context and flask_config.port != 80:
         Log.warning(
-            "ActiveData has SSL context, but is still listening on non-encrypted http port {{port}}",
+            "{{app}} has SSL context, but is still listening on non-encrypted http port {{port}}",
+            app=app_name,
             port=flask_config.port,
         )
 
