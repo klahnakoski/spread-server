@@ -23,7 +23,7 @@ from pyLibrary.env.flask_wrappers import cors_wrapper, add_version, setup_flask_
 from spread_server.actions import static, response, query
 
 APP_NAME = "SpreadServer"
-OVERVIEW = "Simple message"
+OVERVIEW = "You have reached the spread server (https://github.com/klahnakoski/spread-server)"
 
 config = None
 
@@ -38,8 +38,7 @@ class SpreadServerApp(Flask):
                 pass  # ASSUME NORMAL EXIT
             else:
                 Log.warning(
-                    "Serious problem with SpreadServer service construction!  Shutdown!",
-                    cause=e,
+                    "Serious problem with SpreadServer service construction!  Shutdown!", cause=e,
                 )
         finally:
             Log.stop()
@@ -58,18 +57,19 @@ def setup_flask(flask_app, flask_config):
     def _head(path):
         return Response(b"", status=200)
 
+    flask_app.add_url_rule("/query/sql", None, query.sql, methods=["POST"])
+    flask_app.add_url_rule("/response/<path:filename>", None, response.download)
+    flask_app.add_url_rule("/favicon.ico", None, static.send_favicon)
+
+    add_version(flask_app, "https://github.com/klahnakoski/spread-server/tree")
+
+    # FLASK DISPATCH IS ORDERED, SO THIS MUST BE LAST
     @flask_app.route("/", defaults={"path": ""}, methods=["GET", "POST"])
     @flask_app.route("/<path:path>", methods=["GET", "POST"])
     @cors_wrapper
     @register_thread
     def _default(path):
         return Response(OVERVIEW, status=200, headers={"Content-Type": "text/html"})
-
-    flask_app.add_url_rule("/query/sql", None, query.sql)
-    flask_app.add_url_rule("/response/<path:filename>", None, response.download)
-    flask_app.add_url_rule("/favicon.ico", None, static.send_favicon)
-
-    add_version(flask_app, "https://github.com/klahnakoski/spread-server/tree")
 
     if flask_config.port and config.args.process_num:
         flask_config.port += config.args.process_num
@@ -103,7 +103,6 @@ def _exit():
 
 
 class ServerThread(threading.Thread):
-
     def __init__(self, host, port, app, **kwargs):
         threading.Thread.__init__(self)
         self.srv = override(make_server)(host, port, app, **kwargs)
@@ -154,8 +153,5 @@ if __name__ in ("__main__", "spread_server.app"):
             wait_for_shutdown_signal(allow_exit=True)
             server_thread.stop()
     except BaseException as cause:  # MUST CATCH BaseException BECAUSE argparse LIKES TO EXIT THAT WAY, AND gunicorn WILL NOT REPORT
-        Log.error(
-            "Serious problem with SpreadServer service construction!  Shutdown!", cause=cause
-        )
+        Log.error("Serious problem with SpreadServer service construction!  Shutdown!", cause=cause)
         stop_main_thread()
-

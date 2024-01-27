@@ -14,7 +14,7 @@ from mo_json import value2json
 from mo_files import File, mimetype, URL
 from mo_math import randoms
 from mo_threads.threads import register_thread
-from pyLibrary.env.flask_wrappers import cors_wrapper
+from pyLibrary.env.flask_wrappers import cors_wrapper, use_data
 from mo_sql_parsing import parse
 
 from spread_server.dispatch import execute
@@ -25,16 +25,17 @@ RESPONSE_DIRECTORY = File("spread_server/responses")
 
 @cors_wrapper
 @register_thread
-def sql(content):
+@use_data
+def sql(data):
     # validate
     try:
-        parse(content)
+        parse(data)
     except Exception as cause:
         return Response(value2json(cause), 400, headers={"Content-Type": mimetype.JSON})
 
     name = f"{randoms.base64(20)}.sqlite"
     # define new database file
     output_file = RESPONSE_DIRECTORY / name
-    execute(content, output_file)
+    execute(data, output_file)
 
-    return Response(None, 201, headers={"Location": HOST/name})
+    return Response(None, 201, headers={"Location": HOST / name})

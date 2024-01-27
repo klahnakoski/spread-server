@@ -46,9 +46,7 @@ def send_favicon():
     try:
         record_request(flask.request, None, flask.request.get_data(), None)
         content, status, mimetype = _read_file("favicon.ico")
-        return Response(
-            content, status=status, headers={"Content-Type": "image/x-icon"}
-        )
+        return Response(content, status=status, headers={"Content-Type": "image/x-icon"})
     except Exception as e:
         Log.error("Could not get file {{file}}", file="favicon.ico", cause=e)
 

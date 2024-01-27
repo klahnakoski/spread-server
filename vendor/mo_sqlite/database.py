@@ -7,79 +7,39 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-
-from __future__ import absolute_import, division, unicode_literals
-
 import os
 import re
 import sys
-from collections import Mapping, namedtuple
 
-from jx_base import jx_expression
-from jx_python.convert import table2csv
-from mo_dots import Data, coalesce, unwraplist, listwrap, to_data
+from mo_dots import Data, coalesce, list_to_data, from_data
 from mo_files import File
 from mo_future import allocate_lock as _allocate_lock, text, zip_longest
-from mo_json import (
-    BOOLEAN,
-    INTEGER,
-    ARRAY,
-    NUMBER,
-    OBJECT,
-    STRING,
-    T_NUMBER,
-    T_BOOLEAN,
-    T_INTEGER,
-    T_TEXT,
-    T_TIME,
-    T_INTERVAL,
-)
+from mo_imports import delay_import
 from mo_kwargs import override
 from mo_logs.exceptions import ERROR, Except, get_stacktrace, format_trace
-from mo_logs.strings import quote
 from mo_math.stats import percentile
 from mo_sql import *
 from mo_threads import Lock, Queue, Thread, Till
-from mo_times import Date, Duration, Timer
+from mo_times import Timer
+
+from mo_sqlite.transacfion import Transaction
+from mo_sqlite.utils import quote_column, sql_query, CommandItem, COMMIT, quote_value, BEGIN, ROLLBACK, FORMAT_COMMAND
+
+jx_expression = delay_import("jx_base.jx_expression")
+table2csv = delay_import("jx_python.convert.table2csv")
+Relation = delay_import("mo_sqlite.models.relation.Relation")
+
 
 DEBUG = False
-TRACE = False
+TRACE = True
 
-FORMAT_COMMAND = (
-    'Running command from "{{file}}:{{line}}"\n{{command|limit(1000)|indent}}'
-)
-DOUBLE_TRANSACTION_ERROR = (
-    "You can not query outside a transaction you have open already"
-)
+DOUBLE_TRANSACTION_ERROR = "You can not query outside a transaction you have open already"
 TOO_LONG_TO_HOLD_TRANSACTION = 10
 
 _sqlite3 = None
 _load_extension_warning_sent = False
 _upgraded = False
 known_databases = {}
-
-
-def _upgrade():
-    try:
-        Log.note("sqlite not upgraded")
-        # return
-        #
-        # import sys
-        # import platform
-        # if "windows" in platform.system().lower():
-        #     original_dll = File.new_instance(sys.exec_prefix, "dlls/sqlite3.dll")
-        #     if platform.architecture()[0]=='32bit':
-        #         source_dll = File("jx-sqlite/vendor/sqlite/sqlite3_32.dll")
-        #     else:
-        #         source_dll = File("jx-sqlite/vendor/sqlite/sqlite3_64.dll")
-        #
-        #     if not all(a == b for a, b in zip_longest(source_dll.read_bytes(), original_dll.read_bytes())):
-        #         original_dll.backup()
-        #         File.copy(source_dll, original_dll)
-        # else:
-        #     pass
-    except Exception as e:
-        Log.warning("could not upgrade python's sqlite", cause=e)
 
 
 class Sqlite(DB):
@@ -90,14 +50,7 @@ class Sqlite(DB):
 
     @override
     def __init__(
-        self,
-        filename=None,
-        db=None,
-        trace=None,
-        upgrade=False,
-        load_functions=False,
-        debug=False,
-        kwargs=None,
+        self, filename=None, db=None, trace=None, upgrade=False, load_functions=False, debug=False, kwargs=None,
     ):
         """
         :param filename:  FILE TO USE FOR DATABASE
@@ -127,8 +80,7 @@ class Sqlite(DB):
             self.filename = file.abs_path
             if known_databases.get(self.filename):
                 Log.error(
-                    "Not allowed to create more than one Sqlite instance for {{file}}",
-                    file=self.filename,
+                    "Not allowed to create more than one Sqlite instance for {{file}}", file=self.filename,
                 )
             else:
                 known_databases[self.filename] = self
@@ -136,22 +88,16 @@ class Sqlite(DB):
         self.trace = coalesce(trace, TRACE) or self.debug
 
         # SETUP DATABASE
-        self.debug and Log.note(
-            "Sqlite version {{version}}", version=_sqlite3.sqlite_version
-        )
+        self.debug and Log.note("Sqlite version {{version}}", version=_sqlite3.sqlite_version)
         try:
             if not isinstance(db, _sqlite3.Connection):
                 self.db = _sqlite3.connect(
-                    database=coalesce(self.filename, ":memory:"),
-                    check_same_thread=False,
-                    isolation_level=None,
+                    database=coalesce(self.filename, ":memory:"), check_same_thread=False, isolation_level=None,
                 )
             else:
                 self.db = db
         except Exception as e:
-            Log.error(
-                "could not open file {{filename}}", filename=self.filename, cause=e
-            )
+            Log.error("could not open file {{filename}}", filename=self.filename, cause=e)
         self.upgrade = upgrade
         load_functions and self._load_functions()
 
@@ -163,17 +109,15 @@ class Sqlite(DB):
 
         # WORKER VARIABLES
         self.transaction_stack = []  # THE TRANSACTION OBJECT WE HAVE PARTIALLY RUN
-        self.last_command_item = (
-            None  # USE THIS TO HELP BLAME current_transaction FOR HANGING ON TOO LONG
-        )
+        self.last_command_item = None  # USE THIS TO HELP BLAME current_transaction FOR HANGING ON TOO LONG
         self.too_long = None
         self.delayed_queries = []
         self.delayed_transactions = []
+        self.worker = None
         self.worker = Thread.run("sqlite db thread", self._worker, parent_thread=self)
 
         self.debug and Log.note(
-            "Sqlite version {{version}}",
-            version=self.query("select sqlite_version()").data[0][0],
+            "Sqlite version {{version}}", version=self.query("select sqlite_version()").data[0][0],
         )
 
     def _enhancements(self):
@@ -204,11 +148,12 @@ class Sqlite(DB):
         sqlite> .dump
         """
         with self.transaction() as t:
+
             def commands():
-                with open(File(filename).abs_path, "r+b") as file:
+                with open(File(filename).os_path, "r+b") as file:
                     acc = []
                     for line in file.readlines():
-                        line = line.decode('utf8')
+                        line = line.decode("utf8")
                         acc.append(line)
                         if line.strip().endswith(";"):
                             yield "\n".join(acc)
@@ -234,12 +179,40 @@ class Sqlite(DB):
 
     def about(self, table_name):
         """
-        :param table_name: TABLE IF INTEREST
+        :param table_name: TABLE OF INTEREST
         :return: SOME INFORMATION ABOUT THE TABLE
             (cid, name, dtype, notnull, dfft_value, pk) tuples
         """
         details = self.query("PRAGMA table_info" + sql_iso(quote_column(table_name)))
         return details.data
+
+    def get_tables(self):
+        result = self.query(sql_query({
+            "from": "sqlite_master",
+            "where": {"eq": {"type": "table"}},
+            "orderby": "name",
+        }))
+        return list_to_data([{k: d for k, d in zip(result.header, row)} for row in result.data])
+
+    def get_relations(self, table_name):
+        """
+        :param table_name: TABLE OF INTEREST
+        :return: THE FOREIGN KEYS
+        """
+        result = self.query("PRAGMA foreign_key_list" + sql_iso(quote_column(table_name)))
+        relations = Data()
+        for row in result.data:
+            desc = {h: v for h, v in zip(result.header, row)}
+            id = str(row[0])
+            seq = row[1]
+            if not relations[id]:
+                relations[id] = []
+            relations[id][seq] = desc
+
+        return [
+            Relation(cols[0]["table"], [c["to"] for c in cols], table_name, [c["from"] for c in cols],)
+            for id, cols in from_data(relations).items()
+        ]
 
     def query(self, command):
         """
@@ -280,10 +253,14 @@ class Sqlite(DB):
         self.queue.add(CommandItem(COMMIT, Data(), signal, None, None))
         signal.acquire()
         self.worker.stop().join()
+        self.worker = None
 
     def remove_child(self, child):
         if child is self.worker:
             self.worker = None
+
+    def add_child(self, child):
+        pass
 
     def close(self):
         Log.error("Use stop()")
@@ -296,36 +273,24 @@ class Sqlite(DB):
 
     def _load_functions(self):
         global _load_extension_warning_sent
-        library_loc = File.new_instance(sys.modules[__name__].__file__, "../..")
-        full_path = (
-            File
-            .new_instance(library_loc, "vendor/sqlite/libsqlitefunctions.so")
-            .abs_path
-        )
+        library_loc = File.new_instance(sys.modules[__name__].__file__, "../../..")
+        full_path = File.new_instance(library_loc, "vendor/sqlite/libsqlitefunctions.so").abs_path
         try:
             trace = get_stacktrace(0)[0]
             if self.upgrade:
                 if os.name == "nt":
-                    file = File.new_instance(
-                        trace["file"], "../../vendor/sqlite/libsqlitefunctions.so"
-                    )
+                    file = File.new_instance(trace["file"], "../../vendor/sqlite/libsqlitefunctions.so")
                 else:
-                    file = File.new_instance(
-                        trace["file"], "../../vendor/sqlite/libsqlitefunctions"
-                    )
+                    file = File.new_instance(trace["file"], "../../vendor/sqlite/libsqlitefunctions")
 
                 full_path = file.abs_path
                 self.db.enable_load_extension(True)
-                self.db.execute(text(
-                    SQL_SELECT + "load_extension" + sql_iso(quote_value(full_path))
-                ))
+                self.db.execute(text(SQL_SELECT + "load_extension" + sql_iso(quote_value(full_path))))
         except Exception as e:
             if not _load_extension_warning_sent:
                 _load_extension_warning_sent = True
                 Log.warning(
-                    "Could not load {{file}}, doing without. (no SQRT for you!)",
-                    file=full_path,
-                    cause=e,
+                    "Could not load {{file}}, doing without. (no SQRT for you!)", file=full_path, cause=e,
                 )
 
     def create_new_functions(self):
@@ -347,12 +312,8 @@ class Sqlite(DB):
             "this message brought to you by....",
             blocker_trace=format_trace(blocker.trace),
             blocked_trace=format_trace(blocked.trace),
-            blocker_thread=blocker.transaction.thread.name
-            if blocker.transaction is not None
-            else None,
-            blocked_thread=blocked.transaction.thread.name
-            if blocked.transaction is not None
-            else None,
+            blocker_thread=blocker.transaction.thread.name if blocker.transaction is not None else None,
+            blocked_thread=blocked.transaction.thread.name if blocked.transaction is not None else None,
         )
 
     def _close_transaction(self, command_item):
@@ -372,9 +333,7 @@ class Sqlite(DB):
             assert old_trans not in self.transaction_stack
         if not self.transaction_stack:
             # NESTED TRANSACTIONS NOT ALLOWED IN sqlite3
-            self.debug and Log.note(
-                FORMAT_COMMAND, command=query, **command_item.trace[0]
-            )
+            self.debug and Log.note(FORMAT_COMMAND, command=query, **command_item.trace[0])
             self.db.execute(query)
 
         has_been_too_long = False
@@ -417,7 +376,11 @@ class Sqlite(DB):
             self.closed = True
             self.debug and Log.note("Database is closed")
             self.db.close()
-            del known_databases[self.filename]
+            if self.filename:
+                del known_databases[self.filename]
+            else:
+                self.filename = ":memory:"
+            self.debug and Log.note("Database {name|quote} is closed", name=self.filename)
 
     def _process_command_item(self, command_item):
         query, result, signal, trace, transaction = command_item
@@ -447,9 +410,7 @@ class Sqlite(DB):
                 # ENSURE THE CURRENT TRANSACTION IS UP TO DATE FOR THIS query
                 if not self.transaction_stack:
                     # sqlite3 ALLOWS ONLY ONE TRANSACTION AT A TIME
-                    self.debug and Log.note(
-                        FORMAT_COMMAND, command=BEGIN, **command_item.trace[0]
-                    )
+                    self.debug and Log.note(FORMAT_COMMAND, command=BEGIN, **command_item.trace[0])
                     self.db.execute(BEGIN)
                     self.transaction_stack.append(transaction)
                 elif transaction is not self.transaction_stack[-1]:
@@ -457,9 +418,7 @@ class Sqlite(DB):
                 elif transaction.exception and query is not ROLLBACK:
                     result.exception = Except(
                         context=ERROR,
-                        template=(
-                            "Not allowed to continue using a transaction that failed"
-                        ),
+                        template="Not allowed to continue using a transaction that failed",
                         cause=transaction.exception,
                         trace=trace,
                     )
@@ -468,22 +427,20 @@ class Sqlite(DB):
 
                 try:
                     transaction.do_all()
-                except Exception as e:
+                except Exception as cause:
                     # DEAL WITH ERRORS IN QUEUED COMMANDS
                     # WE WILL UNWRAP THE OUTER EXCEPTION TO GET THE CAUSE
                     err = Except(
                         context=ERROR,
                         template="Bad call to Sqlite3 while " + FORMAT_COMMAND,
-                        params={"command": e.params.current.command},
-                        cause=e.cause,
-                        trace=e.params.current.trace,
+                        params={"command": cause.params.current.command},
+                        cause=cause.cause,
+                        trace=cause.params.current.trace,
                     )
                     transaction.exception = result.exception = err
 
                     if query in [COMMIT, ROLLBACK]:
-                        self._close_transaction(CommandItem(
-                            ROLLBACK, result, signal, trace, transaction
-                        ))
+                        self._close_transaction(CommandItem(ROLLBACK, result, signal, trace, transaction))
 
                     signal.release()
                     return
@@ -496,289 +453,28 @@ class Sqlite(DB):
 
                 # EXECUTE QUERY
                 self.last_command_item = command_item
-                self.debug and Log.note(
-                    FORMAT_COMMAND, command=query, **command_item.trace[0]
-                )
+                self.debug and Log.note(FORMAT_COMMAND, command=query, **command_item.trace[0])
                 curr = self.db.execute(text(query))
                 result.meta.format = "table"
-                result.header = (
-                    [d[0] for d in curr.description] if curr.description else None
-                )
+                result.header = [d[0] for d in curr.description] if curr.description else None
                 result.data = curr.fetchall()
                 if self.debug and result.data:
                     csv = table2csv(list(result.data))
                     Log.note("Result:\n{{data|limit(1000)|indent}}", data=csv)
-            except Exception as e:
-                e = Except.wrap(e)
+            except Exception as cause:
+                cause = Except.wrap(cause)
                 err = Except(
                     context=ERROR,
                     template="Bad call to Sqlite while " + FORMAT_COMMAND,
                     params={"command": query},
                     trace=trace,
-                    cause=e,
+                    cause=cause,
                 )
                 result.exception = err
                 if transaction:
                     transaction.exception = err
             finally:
                 signal.release()
-
-
-class Transaction(object):
-    def __init__(self, db, parent, thread):
-        self.db = db
-        self.locker = Lock("transaction " + text(id(self)) + " todo lock")
-        self.todo = []
-        self.complete = 0
-        self.end_of_life = False
-        self.exception = None
-        self.parent = parent
-        self.thread = thread
-
-    def __enter__(self):
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        causes = []
-        try:
-            if isinstance(exc_val, Exception):
-                causes.append(Except.wrap(exc_val))
-                self.rollback()
-            else:
-                self.commit()
-        except Exception as e:
-            causes.append(Except.wrap(e))
-            Log.error("Transaction failed", cause=unwraplist(causes))
-
-    def transaction(self):
-        with self.db.locker:
-            output = Transaction(self.db, parent=self, thread=self.thread)
-            self.db.available_transactions.append(output)
-        return output
-
-    def execute(self, command):
-        if self.end_of_life:
-            Log.error("Transaction is dead")
-        trace = get_stacktrace(1) if self.db.trace else None
-        with self.locker:
-            self.todo.append(CommandItem(str(command), None, None, trace, self))
-
-    def do_all(self):
-        # ENSURE PARENT TRANSACTION IS UP TO DATE
-        c = None
-        try:
-            if self.parent == self:
-                Log.warning("Transactions parent is equal to itself.")
-            if self.parent:
-                self.parent.do_all()
-            # GET THE REMAINING COMMANDS
-            with self.locker:
-                todo = self.todo[self.complete :]
-                self.complete = len(self.todo)
-
-            # RUN THEM
-            for c in todo:
-                self.db.debug and Log.note(
-                    FORMAT_COMMAND, command=c.command, **c.trace[0]
-                )
-                self.db.db.execute(str(c.command))
-        except Exception as e:
-            Log.error("problem running commands", current=c, cause=e)
-
-    def query(self, query):
-        if self.db.closed:
-            Log.error("database is closed")
-
-        signal = _allocate_lock()
-        signal.acquire()
-        result = Data()
-        trace = get_stacktrace(1) if self.db.trace else None
-        self.db.queue.add(CommandItem(str(query), result, signal, trace, self))
-        signal.acquire()
-        if result.exception:
-            Log.error("Problem with Sqlite call", cause=result.exception)
-        return result
-
-    def rollback(self):
-        self.query(ROLLBACK)
-
-    def commit(self):
-        self.query(COMMIT)
-
-
-CommandItem = namedtuple(
-    "CommandItem", ("command", "result", "is_done", "trace", "transaction")
-)
-
-_simple_word = re.compile(r"^[_a-zA-Z][_0-9a-zA-Z]*$", re.UNICODE)
-
-
-def _simple_quote_column(name):
-    if _simple_word.match(name):
-        return name
-    return quote(name)
-
-
-def quote_column(*path):
-    if DEBUG:
-        if not path:
-            Log.error("expecting a name")
-        for p in path:
-            if not is_text(p):
-                Log.error("expecting strings, not {{type}}", type=p.__class__.__name__)
-    try:
-        output = ConcatSQL(
-            SQL_SPACE,
-            JoinSQL(SQL_DOT, [SQL(_simple_quote_column(p)) for p in path]),
-            SQL_SPACE,
-        )
-        return output
-    except Exception as e:
-        Log.error("Not expacted", cause=e)
-
-
-def sql_alias(value, alias):
-    if not isinstance(value, SQL) or not is_text(alias):
-        Log.error("Expecting (SQL, text) parameters")
-    return ConcatSQL(value, SQL_AS, quote_column(alias))
-
-
-def sql_call(func_name, *parameters):
-    return ConcatSQL(SQL(func_name), sql_iso(JoinSQL(SQL_COMMA, parameters)))
-
-
-def quote_value(value):
-    if isinstance(value, (Mapping, list)):
-        return SQL(".")
-    elif isinstance(value, Date):
-        return SQL(text(value.unix))
-    elif isinstance(value, Duration):
-        return SQL(text(value.seconds))
-    elif is_text(value):
-        return SQL("'" + value.replace("'", "''") + "'")
-    elif value == None:
-        return SQL_NULL
-    elif value is True:
-        return SQL_TRUE
-    elif value is False:
-        return SQL_FALSE
-    else:
-        return SQL(text(value))
-
-
-def quote_list(values):
-    return sql_iso(sql_list(map(quote_value, values)))
-
-
-def sql_eq(**item):
-    """
-    RETURN SQL FOR COMPARING VARIABLES TO VALUES (AND'ED TOGETHER)
-
-    :param item: keyword parameters representing variable and value
-    :return: SQL
-    """
-    return SQL_AND.join([
-        ConcatSQL(quote_column(text(k)), SQL_EQ, quote_value(v))
-        if v != None
-        else ConcatSQL(quote_column(text(k)), SQL_IS_NULL)
-        for k, v in item.items()
-    ])
-
-
-def sql_lt(**item):
-    """
-    RETURN SQL FOR LESS-THAN (<) COMPARISION BETWEEN VARIABLES TO VALUES
-
-    :param item: keyword parameters representing variable and value
-    :return: SQL
-    """
-    k, v = first(item.items())
-    return ConcatSQL(quote_column(k), SQL_LT, quote_value(v))
-
-
-def sql_query(command):
-    """
-    VERY BASIC QUERY EXPRESSION TO SQL
-    :param command: jx-expression
-    :return: SQL
-    """
-    command = to_data(command)
-    acc = [SQL_SELECT]
-    if command.select:
-        acc.append(JoinSQL(SQL_COMMA, map(quote_column, listwrap(command.select))))
-    else:
-        acc.append(SQL_STAR)
-
-    acc.append(SQL_FROM)
-    acc.append(quote_column(command["from"]))
-    if command.where:
-        acc.append(SQL_WHERE)
-        if command.where.eq:
-            acc.append(sql_eq(**command.where.eq))
-        else:
-            from jx_sqlite.expressions import SQLang
-
-            where = jx_expression(command.where).partial_eval(SQLang).to_sql[0].b
-            acc.append(where)
-
-    sort = coalesce(command.orderby, command.sort)
-    if sort:
-        acc.append(SQL_ORDERBY)
-        acc.append(JoinSQL(SQL_COMMA, map(quote_column, listwrap(sort))))
-
-    if command.limit:
-        acc.append(SQL_LIMIT)
-        acc.append(JoinSQL(SQL_COMMA, map(quote_value, listwrap(command.limit))))
-
-    return ConcatSQL(*acc)
-
-
-def sql_create(table, properties, primary_key=None, unique=None):
-    """
-    :param table:  NAME OF THE TABLE TO CREATE
-    :param properties: DICT WITH {name: type} PAIRS (type can be plain text)
-    :param primary_key: COLUMNS THAT MAKE UP THE PRIMARY KEY
-    :param unique: COLUMNS THAT SHOULD BE UNIQUE
-    :return:
-    """
-    acc = [
-        SQL_CREATE,
-        quote_column(table),
-        SQL_OP,
-        sql_list([quote_column(k) + SQL(v) for k, v in properties.items()]),
-    ]
-    primary_key = listwrap(primary_key)
-
-    if primary_key:
-        acc.append(SQL_COMMA),
-        acc.append(SQL(" PRIMARY KEY ")),
-        acc.append(sql_iso(sql_list([quote_column(c) for c in listwrap(primary_key)])))
-    if unique:
-        acc.append(SQL_COMMA),
-        acc.append(SQL(" UNIQUE ")),
-        acc.append(sql_iso(sql_list([quote_column(c) for c in listwrap(unique)])))
-
-    acc.append(SQL_CP)
-    if primary_key and not (len(primary_key) == 1 and properties[primary_key[0]] == 'INTEGER'):
-        acc.append(SQL(" WITHOUT ROWID"))
-    return ConcatSQL(*acc)
-
-
-def sql_insert(table, records):
-    records = listwrap(records)
-    keys = list({k for r in records for k in r.keys()})
-    return ConcatSQL(
-        SQL_INSERT,
-        quote_column(table),
-        sql_iso(sql_list(map(quote_column, keys))),
-        SQL_VALUES,
-        sql_list(sql_iso(sql_list([quote_value(r[k]) for k in keys])) for r in records),
-    )
-
-
-BEGIN = "BEGIN"
-COMMIT = "COMMIT"
-ROLLBACK = "ROLLBACK"
 
 
 def _upgrade():
@@ -796,12 +492,7 @@ def _upgrade():
             else:
                 source_dll = File("vendor/jx-sqlite/vendor/sqlite/sqlite3_64.dll")
 
-            if not all(
-                a == b
-                for a, b in zip_longest(
-                    source_dll.read_bytes(), original_dll.read_bytes()
-                )
-            ):
+            if not all(a == b for a, b in zip_longest(source_dll.read_bytes(), original_dll.read_bytes())):
                 original_dll.backup()
                 File.copy(source_dll, original_dll)
         else:
@@ -813,19 +504,3 @@ def _upgrade():
 
     _ = _sqlite3
     _upgraded = True
-
-
-json_type_to_sqlite_type = {
-    BOOLEAN: "TINYINT",
-    INTEGER: "INTEGER",
-    NUMBER: "REAL",
-    STRING: "TEXT",
-    OBJECT: "TEXT",
-    ARRAY: "TEXT",
-    T_BOOLEAN: "TINYINT",
-    T_INTEGER: "INTEGER",
-    T_NUMBER: "REAL",
-    T_TIME: "REAL",
-    T_INTERVAL: "REAL",
-    T_TEXT: "TEXT",
-}

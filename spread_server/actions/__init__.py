@@ -31,9 +31,7 @@ def record_request(request, query_, data, error):
             "referer": request.headers.get("x-referer"),
             "path": request.headers.environ["werkzeug.request"].full_path,
             "content_length": request.headers.get("content_length"),
-            "remote_addr": coalesce(
-                request.headers.get("x-remote-addr"), request.remote_addr
-            ),
+            "remote_addr": coalesce(request.headers.get("x-remote-addr"), request.remote_addr),
             "query_text": value2json(query_) if query_ else None,
             "data": data if data else None,
             "error": value2json(error) if error else None,

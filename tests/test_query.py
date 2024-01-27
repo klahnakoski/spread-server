@@ -1,4 +1,4 @@
-from jx_sqlite.sqlite import Sqlite
+from mo_sqlite.database import Sqlite
 from mo_testing.fuzzytestcase import FuzzyTestCase, add_error_reporting
 
 from mo_files import URL, File
@@ -19,6 +19,6 @@ class TestBasic(FuzzyTestCase):
         self.db.read_sql(TEST_DATABASE)
 
     def test_simple_query(self):
-        response = http.post(host / "query", content="SELECT * FROM chinook.employees")
+        response = http.post(host / "query/sql", data="SELECT * FROM chinook.employees")
         self.assertEqual(response.status_code, 201)
         self.assertTrue(response.headers["Location"].endswith(".sqlite"))

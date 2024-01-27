@@ -50,9 +50,9 @@ def argparse(defs, complain=True):
     return to_data(output)
 
 
-def read_settings(*, defs=None, filename=None, default_filename=None, complain=True):
+def read_config(*, defs=None, config_file=None, default_filename=None, complain=True):
     """
-    :param filename: Force load a file
+    :param config_file: Force load a file
     :param defs: more arguments you want to accept (see https://docs.python.org/3/library/argparse.html#argparse.ArgumentParser.add_argument)
     :param default_filename: A config file from an environment variable (a fallback config file, if no other provided)
     :parma complain: Complain about args mismatch
@@ -73,7 +73,7 @@ def read_settings(*, defs=None, filename=None, default_filename=None, complain=T
     args = argparse(defs, complain)
 
     args.filename = coalesce(
-        filename, args.filename if args.filename.endswith(".json") else None, default_filename, "./config.json",
+        config_file, args.filename if args.filename.endswith(".json") else None, default_filename, "./config.json",
     )
     settings_file = File(args.filename)
     if settings_file.exists:
@@ -84,7 +84,7 @@ def read_settings(*, defs=None, filename=None, default_filename=None, complain=T
             filename=settings_file.abs_path,
         )
 
-    settings = mo_json_config.get_file(config_file)
+    settings = mo_json_config.get_file(args.filename)
     settings.args = args
     return settings
 

@@ -311,3 +311,12 @@ def add_flask_rule(flask_app, path, func):
         provide_automatic_options=False
         )
 
+
+def use_data(func):
+    @decorate(func)
+    def output(*args, **kwargs):
+        data = flask.request.get_data().decode('utf8')
+        if data:
+            kwargs["data"] = text(data)
+        return func(*args, **kwargs)
+    return output

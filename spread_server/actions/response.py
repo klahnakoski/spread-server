@@ -29,8 +29,6 @@ def download(filename):
     """
     try:
         record_request(flask.request, None, flask.request.get_data(), None)
-        return send_from_directory(
-            RESPONSE_DIRECTORY.abs_path, filename, as_attachment=True
-        )
+        return send_from_directory(RESPONSE_DIRECTORY.abs_path, filename, as_attachment=True)
     except Exception as cause:
         Log.error("Could not get file {{file}}", file=filename, cause=cause)
