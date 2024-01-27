@@ -297,7 +297,7 @@ PROMPT = "READY_FOR_MORE"
 
 def cmd_escape(value):
     if hasattr(value, "abspath"):
-        quoted = strings.quote(value.abspath)
+        quoted = strings.quote(value.abs_path)
     else:
         quoted = strings.quote(value)
 

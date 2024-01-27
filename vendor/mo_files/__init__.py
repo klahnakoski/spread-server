@@ -84,7 +84,7 @@ class File(object):
 
     @property
     def timestamp(self):
-        output = os.path.getmtime(self.abspath)
+        output = os.path.getmtime(self.abs_path)
         return output
 
     @property
@@ -103,9 +103,9 @@ class File(object):
             return home_path + self._filename[1::]
         else:
             if os.sep == "\\":
-                return "/" + os.path.abspath(self._filename).replace(os.sep, "/")
+                return "/" + os.path.abs_path(self._filename).replace(os.sep, "/")
             else:
-                return os.path.abspath(self._filename)
+                return os.path.abs_path(self._filename)
 
     def add_suffix(self, suffix):
         """
@@ -123,7 +123,7 @@ class File(object):
 
     @property
     def name(self):
-        parts = self.abspath.split("/")[-1].split(".")
+        parts = self.abs_path.split("/")[-1].split(".")
         if len(parts) == 1:
             return parts[0]
         else:
@@ -132,15 +132,15 @@ class File(object):
     @property
     def mime_type(self):
         if not self._mime_type:
-            if self.abspath.endswith(".js"):
+            if self.abs_path.endswith(".js"):
                 self._mime_type = "application/javascript"
-            elif self.abspath.endswith(".css"):
+            elif self.abs_path.endswith(".css"):
                 self._mime_type = "text/css"
-            elif self.abspath.endswith(".json"):
+            elif self.abs_path.endswith(".json"):
                 self._mime_type = mimetype.JSON
             else:
                 mime = MimeTypes()
-                self._mime_type, _ = mime.guess_type(self.abspath)
+                self._mime_type, _ = mime.guess_type(self.abs_path)
                 if not self._mime_type:
                     self._mime_type = mimetype.BINARY
         return self._mime_type
@@ -220,7 +220,7 @@ class File(object):
         :return: STRING
         """
         from zipfile import ZipFile
-        with ZipFile(self.abspath) as zipped:
+        with ZipFile(self.abs_path) as zipped:
             for num, zip_name in enumerate(zipped.namelist()):
                 return zipped.open(zip_name).read().decode(encoding)
 
@@ -234,7 +234,7 @@ class File(object):
 
         content = self.read(encoding=encoding)
         value = json2value(content, flexible=flexible, leaves=leaves)
-        abspath = self.abspath
+        abspath = self.abs_path
         if os.sep == "\\":
             abspath = "/" + abspath.replace(os.sep, "/")
         return get_module("mo_json_config").expand(value, "file://" + abspath)
@@ -252,7 +252,7 @@ class File(object):
                 else:
                     return f.read()
         except Exception as e:
-            Log.error(u"Problem reading file {{filename}}", filename=self.abspath, cause=e)
+            Log.error(u"Problem reading file {{filename}}", filename=self.abs_path, cause=e)
 
     def write_bytes(self, content):
         if not self.parent.exists:
@@ -322,7 +322,7 @@ class File(object):
             output_file.write(b"\n")
 
     def __len__(self):
-        return os.path.getsize(self.abspath)
+        return os.path.getsize(self.abs_path)
 
     def add(self, content):
         return self.append(content)
@@ -369,7 +369,7 @@ class File(object):
 
     def create(self):
         try:
-            os.makedirs(self.abspath)
+            os.makedirs(self.abs_path)
         except FileExistsError:
             pass
         except Exception as e:
@@ -386,14 +386,14 @@ class File(object):
     def decendants(self):
         yield self
         if self.is_directory():
-            for c in os.listdir(self.abspath):
+            for c in os.listdir(self.abs_path):
                 child = File(self._filename + "/" + c)
                 for cc in child.decendants:
                     yield cc
 
     @property
     def leaves(self):
-        for c in os.listdir(self.abspath):
+        for c in os.listdir(self.abs_path):
             child = File(self._filename + "/" + c)
             if child.is_directory():
                 for l in child.leaves:
@@ -447,16 +447,16 @@ class File(object):
         return self._filename
 
     def __unicode__(self):
-        return self.abspath
+        return self.abs_path
 
     def __eq__(self, other):
-        return isinstance(other, File) and other.abspath == self.abspath
+        return isinstance(other, File) and other.abs_path == self.abs_path
 
     def __hash__(self):
-        return self.abspath.__hash__()
+        return self.abs_path.__hash__()
 
     def __str__(self):
-        return self.abspath
+        return self.abs_path
 
 
 class TempDirectory(File):
@@ -507,7 +507,7 @@ class TempFile(File):
 
 def _copy(from_, to_):
     if from_.is_directory():
-        for c in os.listdir(from_.abspath):
+        for c in os.listdir(from_.abs_path):
             _copy(from_ / c, to_ / c)
     else:
         File.new_instance(to_).write_bytes(File.new_instance(from_).read_bytes())
@@ -601,7 +601,7 @@ def delete_daemon(file, caller_stack, please_stop):
             e = Except.wrap(e)
             e.trace = e.trace[0:2] + caller_stack
             if num_attempts:
-                Log.warning(u"problem deleting file {{file}}", file=file.abspath, cause=e)
+                Log.warning(u"problem deleting file {{file}}", file=file.abs_path, cause=e)
             (Till(seconds=10) | please_stop).wait()
         num_attempts += 1
 

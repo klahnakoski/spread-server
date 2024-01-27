@@ -32,7 +32,7 @@ import mo_math
 from mo_dots import Data, Null, coalesce, is_list, set_default, to_data, is_sequence, from_data
 from mo_files import mimetype
 from mo_files.url import URL
-from mo_future import PY2, is_text, text
+from mo_future import is_text, text
 from mo_future import StringIO
 from mo_http.big_data import ibytes2ilines, icompressed2ibytes, safe_size, ibytes2icompressed, bytes2zip, zip2bytes
 from mo_json import json2value, value2json
@@ -121,16 +121,11 @@ def request(method, url, headers=None, data=None, json=None, zip=None, retry=Non
         close_after_response = session = sessions.Session()
 
     with closing(close_after_response):
-        if PY2 and is_text(url):
-            # httplib.py WILL **FREAK OUT** IF IT SEES ANY UNICODE
-            url = url.encode('ascii')
-
         try:
             set_default(kwargs, DEFAULTS)
 
             # HEADERS
             headers = from_data(set_default(headers, default_headers, {'Accept-Encoding': 'compress, gzip'}))
-            _to_ascii_dict(headers)
 
             # RETRY
             retry = to_data(retry)
@@ -187,23 +182,6 @@ def request(method, url, headers=None, data=None, json=None, zip=None, retry=Non
 
 
 _session_request = override(sessions.Session.request)
-
-if PY2:
-    def _to_ascii_dict(headers):
-        if headers is None:
-            return
-        for k, v in copy(headers).items():
-            if is_text(k):
-                del headers[k]
-                if is_text(v):
-                    headers[k.encode('ascii')] = v.encode('ascii')
-                else:
-                    headers[k.encode('ascii')] = v
-            elif is_text(v):
-                headers[k] = v.encode('ascii')
-else:
-    def _to_ascii_dict(headers):
-        pass
 
 
 def get(url, **kwargs):

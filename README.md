@@ -9,6 +9,18 @@ Experiment to spread data over multiple machines
 4. Have client shard database, send to N nodes, nodes verify and merge
 5. 
 
+* use nginx to deliver result files?
+* client open connection, wait for result, finish request
+* host will send command, make file, and return result
+
+
+* how to asynch the request?
+* what is the QoS?
+* long tcp connection?
+* requests session?
+* request is pure sql, or soemthing else?
+* tcp with json as request?
+
 
 
 ### Query
@@ -33,6 +45,7 @@ Experiment to spread data over multiple machines
 
 ### Node startup
 
+* bid on instances, start them
 * Must have pointer to masters
 * register self
 * get shard info for each data cube
@@ -44,11 +57,19 @@ Experiment to spread data over multiple machines
 
 * Queries on the metadata cubes are run on all masters
 * Node making request performs comparision for determining truth
-* 
+* query balancing / resource balancing
+
   
 
 
 
-Alt tech:
+
+
+
+
+
+
+
+## Alt tech:
 
 https://www.pytables.org/

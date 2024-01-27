@@ -1,0 +1,69 @@
+# encoding: utf-8
+#
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this file,
+# You can obtain one at http://mozilla.org/MPL/2.0/.
+#
+# Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
+#
+from __future__ import absolute_import, division, unicode_literals
+
+import mimetypes
+
+import flask
+from werkzeug.wrappers import Response
+
+from mo_files import File
+from mo_logs import Log
+from mo_threads.threads import register_thread
+from mo_times.durations import DAY
+from pyLibrary.env.flask_wrappers import cors_wrapper
+from pyLibrary.meta import cache
+from spread_server.actions import record_request
+
+STATIC_DIRECTORY = File("spread_server/public")
+
+
+@cors_wrapper
+@register_thread
+def download(filename):
+    """
+    DOWNLOAD FILE CONTENTS
+    :param filename:  URL PATH
+    :return: Response OBJECT WITH FILE CONTENT
+    """
+    try:
+        record_request(flask.request, None, flask.request.get_data(), None)
+        content, status, mimetype = _read_file(filename)
+        return Response(content, status=status, headers={"Content-Type": mimetype})
+    except Exception as e:
+        Log.error("Could not get file {{file}}", file=filename, cause=e)
+
+
+@cors_wrapper
+@register_thread
+def send_favicon():
+    try:
+        record_request(flask.request, None, flask.request.get_data(), None)
+        content, status, mimetype = _read_file("favicon.ico")
+        return Response(
+            content, status=status, headers={"Content-Type": "image/x-icon"}
+        )
+    except Exception as e:
+        Log.error("Could not get file {{file}}", file="favicon.ico", cause=e)
+
+
+@cache(duration=DAY)
+def _read_file(filename):
+    try:
+        file = STATIC_DIRECTORY / filename
+        if not file.abs_path.startswith(STATIC_DIRECTORY.abs_path):
+            return "", 404, "text/html"
+
+        Log.note("Read {{file}}", file=file.abs_path)
+        mimetype, encoding = mimetypes.guess_type(file.extension)
+        if not mimetype:
+            mimetype = "text/html"
+        return file.read_bytes(), 200, mimetype
+    except Exception:
+        return "", 404, "text/html"

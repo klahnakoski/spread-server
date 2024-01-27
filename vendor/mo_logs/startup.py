@@ -83,11 +83,11 @@ def read_config(defs=None, filename=None, default_filename=None, complain=True):
     )
     config_file = File(args.filename)
     if config_file.exists:
-        logger.info("Using {{filename}} for configuration", filename=config_file.abspath)
+        logger.info("Using {{filename}} for configuration", filename=config_file.abs_path)
     else:
         logger.error(
             "Can not read configuration file {{filename}}",
-            filename=config_file.abspath,
+            filename=config_file.abs_path,
         )
 
     settings = mo_json_config.get_file(config_file)
@@ -120,7 +120,7 @@ class SingleInstance:
 
     def __init__(self, flavor_id=""):
         self.initialized = False
-        appname = os.path.splitext(os.path.abspath(sys.argv[0]))[0]
+        appname = os.path.splitext(os.path.abs_path(sys.argv[0]))[0]
         basename = ((appname + "-%s") % flavor_id).replace("/", "-").replace(
             ":", ""
         ).replace("\\", "-").replace("-.-", "-") + ".lock"

@@ -11,7 +11,7 @@ from datetime import datetime, date
 from decimal import Decimal
 
 from mo_dots import split_field, NullType, is_many, is_data, concat_field
-from mo_future import text, none_type, PY2, long, items, first
+from mo_future import text, none_type, long, items, first
 from mo_logs import Log
 from mo_times import Date
 
@@ -325,11 +325,6 @@ _python_type_to_json_type = {
     datetime: T_TIME,
     date: T_TIME,
 }
-
-if PY2:
-    _python_type_to_json_type[str] = T_TEXT
-    _python_type_to_json_type[long] = T_INTEGER
-
 
 for k, v in items(_python_type_to_json_type):
     _python_type_to_json_type[k.__name__] = v

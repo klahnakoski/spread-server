@@ -9,7 +9,7 @@
 from __future__ import absolute_import, division, unicode_literals
 
 from mo_dots import Data, get_module
-from mo_future import PY2, binary_type
+from mo_future import binary_type
 from mo_future import is_text, is_binary
 from mo_logs import Log
 from mo_math import base642bytes, crypto, bytes2base64
@@ -28,10 +28,7 @@ def encrypt(text, _key, salt=None):
         data = bytearray(text.encode("utf8"))
     elif is_binary(text):
         encoding = None
-        if PY2:
-            data = bytearray(text)
-        else:
-            data = text
+        data = bytearray(text)
 
     if _key is None:
         Log.error("Expecting a key")

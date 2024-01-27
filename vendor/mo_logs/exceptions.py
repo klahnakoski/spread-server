@@ -15,9 +15,7 @@ import sys
 from datetime import datetime
 
 from mo_dots import Null, is_data, listwrap, unwraplist, to_data, dict_to_data
-from mo_dots.lists import is_many
-from mo_future import is_text, PY2
-from mo_future import text
+from mo_future import is_text, text
 from mo_logs.strings import CR, expand_template, indent
 
 FATAL = "FATAL"

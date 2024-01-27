@@ -20,6 +20,7 @@ from mo_logs import Log, constants, machine_metadata, startup
 from mo_threads import stop_main_thread
 from mo_threads.threads import MAIN_THREAD, register_thread, wait_for_shutdown_signal
 from pyLibrary.env.flask_wrappers import cors_wrapper, add_version, setup_flask_ssl
+from spread_server.actions import static, response, query
 
 APP_NAME = "SpreadServer"
 OVERVIEW = "Simple message"
@@ -63,6 +64,10 @@ def setup_flask(flask_app, flask_config):
     @register_thread
     def _default(path):
         return Response(OVERVIEW, status=200, headers={"Content-Type": "text/html"})
+
+    flask_app.add_url_rule("/query/sql", None, query.sql)
+    flask_app.add_url_rule("/response/<path:filename>", None, response.download)
+    flask_app.add_url_rule("/favicon.ico", None, static.send_favicon)
 
     add_version(flask_app, "https://github.com/klahnakoski/spread-server/tree")
 
