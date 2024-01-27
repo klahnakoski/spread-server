@@ -2,3 +2,4 @@
 .svn
 /SpreadServer.pid
 __pycache__
+*.pyc
