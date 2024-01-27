@@ -7,29 +7,23 @@ Experiment to spread data over multiple machines
 2. Have client send database to node
 3. Have node merge database
 4. Have client shard database, send to N nodes, nodes verify and merge
-5. 
 
-* use nginx to deliver result files?
-* client open connection, wait for result, finish request
-* host will send command, make file, and return result
+### Questions:
 
+* use nginx to deliver result files? - maybe, do we require authentication?  session?
 
-* how to asynch the request?
+* how to asynch the request? requests will respond with response url, which is filled at a later time
+* probably need a status endpoint so we know when the response file is ready
 * what is the QoS?
-* long tcp connection?
-* requests session?
-* request is pure sql, or soemthing else?
-* tcp with json as request?
-
+* request is pure sql, or something else? - we will accept language based on request path, and convert if required.
 
 
 ### Query
 
-* Send query to server and get back response
-* reduce latency of request
-* Send query to master, master distrbutes query to many, and collects results
-  * client send broadcast and reduce queries
-  * 
+* Send query to server and get back response with url to result
+* Send query to master, master distributes query to many, and collects results
+  * client send broadcast and reduce queries?
+  
 
 ### Ingestion
 
@@ -56,17 +50,8 @@ Experiment to spread data over multiple machines
 ### Master Nodes
 
 * Queries on the metadata cubes are run on all masters
-* Node making request performs comparision for determining truth
+* Node making request performs comparison for determining truth
 * query balancing / resource balancing
-
-  
-
-
-
-
-
-
-
 
 
 
