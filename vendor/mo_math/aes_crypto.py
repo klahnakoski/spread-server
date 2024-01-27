@@ -31,7 +31,7 @@ def encrypt(text, _key, salt=None):
         data = bytearray(text.encode("utf8"))
     elif is_binary(text):
         encoding = None
-        data = bytearray(text)
+        data = text
 
     if _key is None:
 
