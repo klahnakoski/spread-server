@@ -7,18 +7,16 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
-
-from jx_base.expressions import NotOp as NotOp_, BasicNotOp
+from jx_base.expressions import NotOp as _NotOp, BasicNotOp
 from jx_base.language import is_op
 from jx_sqlite.expressions._utils import check, SQLang, OrOp
 
 
-class NotOp(NotOp_):
+class NotOp(_NotOp):
     @check
     def to_sql(self, schema):
         term = self.partial_eval(SQLang)
         if is_op(term, NotOp):
-            return OrOp([term.term.missing(SQLang), BasicNotOp(term.term)]).partial_eval(SQLang).to_sql(schema)
+            return OrOp(term.term.missing(SQLang), BasicNotOp(term.term)).partial_eval(SQLang).to_sql(schema)
         else:
             return term.to_sql(schema)

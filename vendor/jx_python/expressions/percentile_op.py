@@ -7,11 +7,11 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
 
-from jx_base.expressions import PercentileOp as PercentileOp_
+
+from jx_base.expressions import PercentileOp as _PercentileOp
 from jx_python.expressions._utils import multiop_to_python
 
 
-class PercentileOp(PercentileOp_):
+class PercentileOp(_PercentileOp):
     to_python = multiop_to_python

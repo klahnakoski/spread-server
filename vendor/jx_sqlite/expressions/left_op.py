@@ -7,18 +7,16 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
-
-from jx_base.expressions import LeftOp as LeftOp_, ONE, LengthOp, WhenOp, BasicSubstringOp, ZERO, MaxOp, MinOp, \
+from jx_base.expressions import LeftOp as _LeftOp, ONE, LengthOp, WhenOp, BasicSubstringOp, ZERO, MaxOp, MinOp, \
     SqlSubstrOp, EqOp
 from jx_sqlite.expressions._utils import check, SQLang
 
 
-class LeftOp(LeftOp_):
+class LeftOp(_LeftOp):
     @check
     def to_sql(self, schema):
         return (
-            SqlSubstrOp([self.value, ONE, self.length])
+            SqlSubstrOp(self.value, ONE, self.length)
             .partial_eval(SQLang)
             .to_sql(schema)
         )
@@ -29,10 +27,10 @@ class LeftOp(LeftOp_):
         max_length = LengthOp(value)
 
         return WhenOp(
-            EqOp([max_length, ZERO]),
-            **{"else": SqlSubstrOp([
+            EqOp(max_length, ZERO),
+            **{"else": SqlSubstrOp(
                 value,
                 ONE,
                 length,
-            ])}
+            )}
         ).partial_eval(lang)

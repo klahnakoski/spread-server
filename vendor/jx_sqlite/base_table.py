@@ -7,16 +7,11 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-
-
-from __future__ import absolute_import, division, unicode_literals
-
-from jx_base.models.table import Table
+import jx_base
 from mo_kwargs import override
-from mo_logs import Log
 
 
-class BaseTable(Table):
+class BaseTable(jx_base.Table):
     @override
     def __init__(self, name, container):
         """
@@ -41,7 +36,3 @@ class BaseTable(Table):
     def schema(self):
         return self.container.ns.get_schema(self.name)
 
-    def get_table(self, name):
-        if self.name == name:
-            return self
-        Log.error("not found")

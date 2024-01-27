@@ -7,33 +7,31 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
-
 from jx_base.expressions import (
-    EqOp as EqOp_,
+    EqOp as _EqOp,
     FALSE,
     TRUE,
-    BasicEqOp,
-    CaseOp,
-    WhenOp,
-    is_literal,
-    InOp,
+    is_literal
 )
 from jx_base.expressions._utils import builtin_ops, simplified
 from jx_sqlite.expressions._utils import SQLang, check
-from mo_json import T_ARRAY
+from jx_sqlite.expressions.basic_eq_op import BasicEqOp
+from jx_sqlite.expressions.case_op import CaseOp
+from jx_sqlite.expressions.in_op import InOp
+from jx_sqlite.expressions.when_op import WhenOp
+from mo_json import JX_ARRAY
 
 
-class EqOp(EqOp_):
+class EqOp(_EqOp):
     @check
     def to_sql(self, schema):
         m_rhs = self.rhs.missing(SQLang)
         output = (
-            CaseOp([
+            CaseOp(
                 WhenOp(self.lhs.missing(SQLang), then=m_rhs),
                 WhenOp(m_rhs, then=FALSE),
-                BasicEqOp([self.lhs, self.rhs]),
-            ])
+                BasicEqOp(self.lhs, self.rhs),
+            )
             .partial_eval(SQLang)
             .to_sql(schema)
         )
@@ -48,13 +46,13 @@ class EqOp(EqOp_):
             if is_literal(rhs):
                 return TRUE if builtin_ops["eq"](lhs.value, rhs.value) else FALSE
             lhs, rhs = rhs, lhs
-        if is_literal(rhs) and rhs.type in T_ARRAY:
-            return InOp([lhs, rhs]).partial_eval(lang)
+        if is_literal(rhs) and rhs.jx_type in JX_ARRAY:
+            return lang.InOp(lhs, rhs).partial_eval(lang)
 
         rhs_missing = rhs.missing(SQLang)
-        output = CaseOp([
-            WhenOp(lhs.missing(SQLang), then=rhs_missing),
-            WhenOp(rhs_missing, then=FALSE),
-            BasicEqOp([lhs, rhs]),
-        ]).partial_eval(SQLang)
+        output = lang.CaseOp(
+            lang.WhenOp(lhs.missing(SQLang), then=rhs_missing),
+            lang.WhenOp(rhs_missing, then=FALSE),
+            lang.BasicEqOp(lhs, rhs),
+        ).partial_eval(SQLang)
         return output

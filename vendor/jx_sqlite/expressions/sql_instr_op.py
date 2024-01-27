@@ -7,12 +7,11 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
-
 from jx_base.expressions import SqlInstrOp as SqlInstrOp_, OrOp
-from jx_sqlite.expressions._utils import check, SQLang, SQLScript
-from jx_sqlite.sqlite import sql_call
-from mo_json import T_INTEGER
+from jx_base.expressions._utils import simplified
+from jx_sqlite.expressions._utils import check, SQLang, SqlScript
+from mo_sqlite import sql_call
+from mo_json import JX_INTEGER
 
 
 class SqlInstrOp(SqlInstrOp_):
@@ -21,15 +20,16 @@ class SqlInstrOp(SqlInstrOp_):
         value = self.value.to_sql(schema)
         find = self.find.to_sql(schema)
 
-        return SQLScript(
-            data_type=T_INTEGER,
-            expr=sql_call("INSTR", value.frum, find.frum),
+        return SqlScript(
+            jx_type=JX_INTEGER,
+            expr=sql_call("INSTR", value.expr, find.expr),
             frum=self,
-            miss=OrOp([self.value.missing(SQLang), self.find.missing(SQLang)]),
+            miss=OrOp(self.value.missing(SQLang), self.find.missing(SQLang)),
             schema=schema,
         )
 
+    @simplified
     def partial_eval(self, lang):
         value = self.value.partial_eval(SQLang)
         find = self.find.partial_eval(SQLang)
-        return SqlInstrOp([value, find])
+        return SqlInstrOp(value, find)

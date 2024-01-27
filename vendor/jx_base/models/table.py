@@ -7,7 +7,6 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
 
 
 class Table:
@@ -20,6 +19,12 @@ class Table:
 
     def map(self, mapping):
         return self
+
+    def get_relations(self):
+        """
+        RETURN ALL RELATIONS TO THIS TABLE
+        """
+        return []
 
     def __data__(self):
         return self.name

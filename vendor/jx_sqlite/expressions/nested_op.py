@@ -7,9 +7,6 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-
-from __future__ import absolute_import, division, unicode_literals
-
 from jx_base.expressions import QueryOp
 from jx_base.expressions.nested_op import NestedOp as _NestedOp
 from jx_sqlite.query_table import QueryTable

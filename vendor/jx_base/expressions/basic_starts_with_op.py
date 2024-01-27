@@ -8,13 +8,12 @@
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
 
-from __future__ import absolute_import, division, unicode_literals
 
 from jx_base.expressions.expression import Expression
 from jx_base.expressions.false_op import FALSE
-from jx_base.expressions.to_text_op import ToTextOp
+from jx_base.expressions.is_text_op import IsTextOp
 from jx_base.language import is_op
-from mo_json.types import T_BOOLEAN
+from mo_json.types import JX_BOOLEAN
 
 
 class BasicStartsWithOp(Expression):
@@ -22,11 +21,17 @@ class BasicStartsWithOp(Expression):
     PLACEHOLDER FOR BASIC value.startsWith(find, start) (CAN NOT DEAL WITH NULLS)
     """
 
-    data_type = T_BOOLEAN
+    _jx_type = JX_BOOLEAN
 
     def __init__(self, *params):
-        Expression.__init__(self, params)
+        Expression.__init__(self, *params)
         self.value, self.prefix = params
+
+    def __call__(self, row, rownum=None, rows=None):
+        if self.value(row, rownum, rows).startswith(self.prefix(row, rownum, rows)):
+            return True
+        else:
+            return False
 
     def __data__(self):
         return {"basic.startsWith": [self.value.__data__(), self.prefix.__data__()]}
@@ -39,16 +44,12 @@ class BasicStartsWithOp(Expression):
         return self.value.vars() | self.prefix.vars()
 
     def map(self, map_):
-        return self.lang.BasicStartsWithOp([
-            self.value.map(map_),
-            self.prefix.map(map_),
-        ])
+        return self.lang.BasicStartsWithOp(self.value.map(map_), self.prefix.map(map_),)
 
     def missing(self, lang):
         return FALSE
 
     def partial_eval(self, lang):
-        return BasicStartsWithOp([
-            ToTextOp(self.value).partial_eval(lang),
-            ToTextOp(self.prefix).partial_eval(lang),
-        ])
+        return lang.BasicStartsWithOp(
+            IsTextOp(self.value).partial_eval(lang), IsTextOp(self.prefix).partial_eval(lang),
+        )

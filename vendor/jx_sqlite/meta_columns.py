@@ -7,22 +7,16 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
-
 from copy import copy
 
-from jx_base.models.schema import Schema
-
 import jx_base
-from jx_base import Table, Container, Column
+from jx_base import Schema, Table, Container, Column
 from jx_base.meta_columns import (
     META_COLUMNS_DESC,
     META_COLUMNS_NAME,
     SIMPLE_METADATA_COLUMNS,
 )
 from jx_python import jx
-from jx_sqlite.expressions._utils import sql_type_key_to_json_type
-from jx_sqlite.sqlite import sql_query
 from jx_sqlite.utils import untyped_column
 from mo_dots import (
     Data,
@@ -37,11 +31,12 @@ from mo_dots import (
     list_to_data,
 )
 from mo_json import STRUCT, IS_NULL
-from mo_json.typed_encoder import unnest_path, untyped
+from mo_json.typed_encoder import unnest_path, detype
 from mo_logs import Log
+from mo_sql.utils import sql_type_key_to_json_type
+from mo_sqlite import sql_query
 from mo_threads import Queue
 from mo_times.dates import Date
-from pyLibrary.meta import _FakeLock
 
 DEBUG = False
 singlton = None
@@ -95,7 +90,7 @@ class ColumnList(Table, Container):
         tables = list_to_data([
             {k: d for k, d in zip(result.header, row)} for row in result.data
         ])
-        last_nested_path = ["."]
+        last_nested_path = []
         for table in tables:
             if table.name.startswith("__"):
                 continue
@@ -124,7 +119,7 @@ class ColumnList(Table, Container):
                 cname, ctype = untyped_column(name)
                 self.add(Column(
                     name=cname,
-                    jx_type=coalesce(
+                    json_type=coalesce(
                         sql_type_key_to_json_type.get(ctype),
                         sql_type_key_to_json_type.get(dtype),
                         IS_NULL,
@@ -427,12 +422,12 @@ class ColumnList(Table, Container):
                     "count": c.count,
                     "nested_path": [unnest_path(n) for n in c.nested_path],
                     "es_type": c.es_type,
-                    "type": c.jx_type,
+                    "type": c.json_type,
                 }
                 for tname, css in self.data.items()
                 for cname, cs in css.items()
                 for c in cs
-                if c.jx_type not in STRUCT  # and c.es_column != "_id"
+                if c.json_type not in STRUCT  # and c.es_column != "_id"
             ]
 
         from jx_python.containers.list import ListContainer
@@ -445,7 +440,7 @@ class ColumnList(Table, Container):
 
 
 def doc_to_column(doc):
-    return Column(**wrap(untyped(doc)))
+    return Column(**wrap(detype(doc)))
 
 
 def mark_as_deleted(col):
@@ -454,3 +449,11 @@ def mark_as_deleted(col):
     col.multi = 0
     col.partitions = None
     col.last_updated = Date.now()
+
+
+class _FakeLock():
+    def __enter__(self):
+        pass
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        pass

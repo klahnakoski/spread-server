@@ -7,12 +7,10 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
-
-from jx_base.expressions import FloorOp as FloorOp_, OrOp
+from jx_base.expressions import FloorOp as _FloorOp, OrOp
 from jx_sqlite.expressions._utils import SQLang, check
-from jx_sqlite.expressions.sql_script import SQLScript
-from jx_sqlite.sqlite import (
+from jx_sqlite.expressions.sql_script import SqlScript
+from mo_sqlite import (
     sql_iso,
     SQL_DIV,
     SQL_STAR,
@@ -24,30 +22,30 @@ from jx_sqlite.sqlite import (
     SQL_ZERO, sql_cast,
 )
 from mo_future import text
-from mo_json import T_NUMBER
+from mo_json import JX_NUMBER
 
 
-class FloorOp(FloorOp_):
+class FloorOp(_FloorOp):
     @check
     def to_sql(self, schema):
         lhs = self.lhs.partial_eval(SQLang).to_sql(schema)
         rhs = self.rhs.partial_eval(SQLang).to_sql(schema)
-        modifier = sql_iso(lhs.frum, SQL_LT, SQL_ZERO)
+        modifier = sql_iso(lhs.expr, SQL_LT, SQL_ZERO)
 
         if text(rhs).strip() != "1":
             floor = sql_cast(
-                ConcatSQL(sql_iso(lhs.frum), SQL_DIV, sql_iso(rhs.frum)),
+                ConcatSQL(sql_iso(lhs.expr), SQL_DIV, sql_iso(rhs.expr)),
                 "INTEGER"
             )
             sql = ConcatSQL(sql_iso(floor, SQL_SUB, modifier), SQL_STAR, rhs)
         else:
-            floor = sql_cast(lhs.frum, "INTEGER")
+            floor = sql_cast(lhs.expr, "INTEGER")
             sql = ConcatSQL(floor, SQL_SUB, modifier)
 
-        return SQLScript(
-            data_type=T_NUMBER,
+        return SqlScript(
+            jx_type=JX_NUMBER,
             expr=sql,
             frum=self,
-            miss=OrOp([self.lhs.missing(SQLang), self.rhs.missing(SQLang)]),
+            miss=OrOp(self.lhs.missing(SQLang), self.rhs.missing(SQLang)),
             schema=schema,
         )

@@ -7,17 +7,16 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-
-from __future__ import absolute_import, division, unicode_literals
+from mo_dots import is_missing
 
 from jx_base.expressions.expression import Expression
 from jx_base.language import is_op
 from mo_imports import export
-from mo_json.types import T_BOOLEAN
+from mo_json.types import JX_BOOLEAN
 
 
 class NotOp(Expression):
-    data_type = T_BOOLEAN
+    _jx_type = JX_BOOLEAN
 
     def __init__(self, term):
         Expression.__init__(self, term)
@@ -27,7 +26,14 @@ class NotOp(Expression):
         return {"not": self.term.__data__()}
 
     def __call__(self, row, rownum=None, rows=None):
-        return not self.term(row, rownum, rows)
+        term = self.term(row, rownum, rows)
+        if is_missing(term):
+            return True
+        if term is True:
+            return False
+        if term is False:
+            return True
+        return False
 
     def __eq__(self, other):
         if not is_op(other, NotOp):

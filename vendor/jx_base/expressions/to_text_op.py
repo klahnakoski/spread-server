@@ -8,7 +8,6 @@
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
 
-from __future__ import absolute_import, division, unicode_literals
 
 import mo_json
 from jx_base.expressions.coalesce_op import CoalesceOp
@@ -18,15 +17,21 @@ from jx_base.expressions.literal import Literal
 from jx_base.expressions.literal import is_literal
 from jx_base.expressions.null_op import NULL
 from jx_base.language import is_op
-from mo_json.types import T_TEXT, T_IS_NULL
+from mo_json.types import JX_TEXT, JX_IS_NULL
 
 
 class ToTextOp(Expression):
-    data_type = T_TEXT
+    _jx_type = JX_TEXT
 
-    def __init__(self, *term):
-        Expression.__init__(self, [term])
+    def __init__(self, term):
+        Expression.__init__(self, term)
         self.term = term
+
+    def __call__(self, row, rownum=None, rows=None):
+        try:
+            return str(self.term(row, rownum, rows))
+        except:
+            return None
 
     def __data__(self):
         return {"to_text": self.term.__data__()}
@@ -42,15 +47,15 @@ class ToTextOp(Expression):
 
     def partial_eval(self, lang):
         term = self.term
-        if term.type is T_IS_NULL:
+        if term.jx_type is JX_IS_NULL:
             return NULL
         term = (FirstOp(term)).partial_eval(lang)
         if is_op(term, ToTextOp):
             return term.term.partial_eval(lang)
         elif is_op(term, CoalesceOp):
-            return CoalesceOp([(ToTextOp(t)).partial_eval(lang) for t in term.terms])
+            return CoalesceOp(*((ToTextOp(t)).partial_eval(lang) for t in term.terms))
         elif is_literal(term):
-            if term.type == T_TEXT:
+            if term.jx_type == JX_TEXT:
                 return term
             else:
                 return Literal(mo_json.value2json(term.value))

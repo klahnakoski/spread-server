@@ -7,7 +7,6 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
 
 
 class Snowflake(object):
@@ -16,10 +15,6 @@ class Snowflake(object):
     """
 
     def get_schema(self, query_path):
-        raise NotImplemented()
-
-    @property
-    def query_paths(self):
         raise NotImplemented()
 
     @property

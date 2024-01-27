@@ -6,8 +6,17 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-
-from mo_dots import Data, Null, coalesce, is_data, is_list, to_data, is_many, unwraplist, is_null
+from mo_dots import (
+    Data,
+    Null,
+    coalesce,
+    is_data,
+    is_list,
+    to_data,
+    is_many,
+    unwraplist,
+    is_null,
+)
 from mo_future import is_text, text, unichr, urlparse, is_binary
 from mo_logs import Log
 
@@ -41,7 +50,7 @@ class URL(object):
 
             if value.startswith("file://") or value.startswith("//"):
                 # urlparse DOES NOT WORK IN THESE CASES
-                scheme, suffix = value.split("//", 2)
+                scheme, suffix = value.split("//", 1)
                 self.scheme = scheme.rstrip(":")
                 parse(self, suffix, 0, 1)
                 self.query = to_data(url_param2value(self.query))
@@ -57,26 +66,12 @@ class URL(object):
             Log.error(u"problem parsing {{value}} to URL", value=value, cause=e)
 
     def __nonzero__(self):
-        if (
-            self.scheme
-            or self.host
-            or self.port
-            or self.path
-            or self.query
-            or self.fragment
-        ):
+        if self.scheme or self.host or self.port or self.path or self.query or self.fragment:
             return True
         return False
 
     def __bool__(self):
-        if (
-            self.scheme
-            or self.host
-            or self.port
-            or self.path
-            or self.query
-            or self.fragment
-        ):
+        if self.scheme or self.host or self.port or self.path or self.query or self.fragment:
             return True
         return False
 
@@ -91,9 +86,6 @@ class URL(object):
         output = self.__copy__()
         output.query += other
         return output
-
-    def __unicode__(self):
-        return self.__str__().decode("utf8")  # ASSUME chr<128 ARE VALID UNICODE
 
     def __copy__(self):
         output = URL(None)
@@ -130,7 +122,7 @@ class URL(object):
                 url += str(self.path)
             else:
                 url += "/" + str(self.path)
-        if self.query:
+        if len(self.query):
             url = url + "?" + value2url_param(self.query)
         if self.fragment:
             url = url + "#" + value2url_param(self.fragment)
@@ -305,7 +297,9 @@ def from_paths(value):
         path = k.split("[")
         if any(not p.endswith("]") for p in path[1:]):
             Log.error("expecting square brackets to be paired")
-        path = [int(pp) if is_integer(pp) else pp for i, p in enumerate(path) for pp in [p.rstrip("]") if i > 0 else p]]
+        path = [
+            int(pp) if is_integer(pp) else pp for i, p in enumerate(path) for pp in [p.rstrip("]") if i > 0 else p]
+        ]
 
         d = output
         for p, q in zip(path, path[1:]):
@@ -315,7 +309,9 @@ def from_paths(value):
                 else:
                     d[p] = []
             elif is_text(q) == is_list(d[p]):
-                Log.error("can not index {{type}} with {{key}}", type=type(d[p]).__name__, key=q)
+                Log.error(
+                    "can not index {{type}} with {{key}}", type=type(d[p]).__name__, key=q,
+                )
 
             d = d[p]
         d[path[-1]] = v

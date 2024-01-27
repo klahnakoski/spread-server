@@ -7,15 +7,17 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
-
-from jx_base.expressions import AvgOp as AvgOp_
-from jx_python.expressions._utils import multiop_to_python, with_var
 
 
-class AvgOp(AvgOp_):
+from jx_base.expressions import AvgOp as _AvgOp
+from jx_python.expressions._utils import multiop_to_python, with_var, PythonSource
+
+
+class AvgOp(_AvgOp):
     to_python = multiop_to_python
 
-    def to_python(self, not_null=False, boolean=False, many=False):
-        default = self.default.to_python()
-        return with_var("x", self.terms.to_python(not_null=True, many=True), f"sum(x)/count(x) if x else {default}")
+    def to_python(self, loop_depth=0):
+        default = self.default.to_python(loop_depth)
+        return PythonScript(
+            {}, loop_depth, with_var("x", self.terms.to_python(loop_depth), f"sum(x)/count(x) if x else {default}",),
+        )

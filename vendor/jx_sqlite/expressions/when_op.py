@@ -7,14 +7,12 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
-
-from jx_base.expressions import WhenOp as WhenOp_, ToBooleanOp, TRUE, NotOp, AndOp
-from jx_sqlite.expressions._utils import SQLang, check, SQLScript, OrOp
-from jx_sqlite.sqlite import SQL_CASE, SQL_ELSE, SQL_END, SQL_THEN, SQL_WHEN, ConcatSQL
+from jx_base.expressions import WhenOp as _WhenOp, ToBooleanOp, TRUE, NotOp, AndOp
+from jx_sqlite.expressions._utils import SQLang, check, SqlScript, OrOp
+from mo_sqlite import SQL_CASE, SQL_ELSE, SQL_END, SQL_THEN, SQL_WHEN, ConcatSQL
 
 
-class WhenOp(WhenOp_):
+class WhenOp(_WhenOp):
     @check
     def to_sql(self, schema):
         when = ToBooleanOp(self.when).partial_eval(SQLang).to_sql(schema)
@@ -22,28 +20,28 @@ class WhenOp(WhenOp_):
         els_ = self.els_.partial_eval(SQLang).to_sql(schema)
 
         if then.miss is TRUE:
-            return SQLScript(
-                data_type=els_.type,
+            return SqlScript(
+                jx_type=els_.jx_type,
                 frum=self,
-                expr=els_.frum,
-                miss=OrOp([when, els_.miss]),
+                expr=els_.expr,
+                miss=OrOp(when, els_.miss),
                 schema=schema,
             )
         elif els_.miss is TRUE:
-            return SQLScript(
-                data_type=then.type,
+            return SqlScript(
+                jx_type=then.jx_type,
                 frum=self,
-                expr=then.frum,
-                miss=OrOp([when.miss, NotOp(when), then.miss]),
+                expr=then.expr,
+                miss=OrOp(NotOp(when), then.miss),
                 schema=schema,
             )
 
-        return SQLScript(
-            data_type=then.type | els_.type,
+        return SqlScript(
+            jx_type=then.jx_type | els_.jx_type,
             frum=self,
             expr=ConcatSQL(
-                SQL_CASE, SQL_WHEN, when.frum, SQL_THEN, then.frum, SQL_ELSE, els_.frum, SQL_END
+                SQL_CASE, SQL_WHEN, when.expr, SQL_THEN, then.expr, SQL_ELSE, els_.expr, SQL_END
             ),
-            miss=OrOp([AndOp([when.frum, then.miss]), AndOp([OrOp([when.miss, NotOp(when.frum)]), els_.miss])]),
+            miss=OrOp(AndOp(when.frum, then.miss), AndOp(OrOp(when.miss, NotOp(when.frum)), els_.miss)),
             schema=schema,
         )

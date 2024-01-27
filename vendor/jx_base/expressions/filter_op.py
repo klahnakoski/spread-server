@@ -8,31 +8,29 @@
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
 
-from __future__ import absolute_import, division, unicode_literals
-
-from jx_base.expressions.expression import Expression
+from jx_base.expressions.expression import Expression, jx_expression, MissingOp
+from jx_base.expressions.literal import TRUE
+from jx_base.language import JX
 from mo_dots import is_many
 
 
 class FilterOp(Expression):
-    def __init__(self, *terms):
-        Expression.__init__(self, terms)
-        self.frum, self.func = terms
-        if self.frum.type != T_ARRAY:
-            Log.error("expecting an array")
+    def __init__(self, frum, predicate):
+        Expression.__init__(self, frum, predicate)
+        self.frum, self.predicate = frum, predicate
 
     def __data__(self):
-        return {"filter": [self.frum.__data(), self.func.__data__()]}
+        return {"filter": [self.frum.__data__(), self.predicate.__data__()]}
 
     def vars(self):
-        return self.frum.vars() | self.func.vars()
+        return self.frum.vars() | self.predicate.vars()
 
     def map(self, map_):
-        return FilterOp([self.frum.map(mao_), self.func.map(map_)])
+        return FilterOp(self.frum.map(map_), self.predicate.map(map_))
 
     @property
-    def type(self):
-        return self.frum.type
+    def jx_type(self):
+        return self.frum.jx_type
 
     def missing(self, lang):
         return MissingOp(self)
@@ -41,9 +39,9 @@ class FilterOp(Expression):
         return self.missing(lang)
 
 
-def _normalize_where(where, schema=None):
+def _normalize_where(where, lang=JX):
     if is_many(where):
         where = {"and": where}
     elif not where:
         where = TRUE
-    return jx_expression(where, schema=schema)
+    return jx_expression(where, lang)

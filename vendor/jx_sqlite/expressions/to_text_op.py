@@ -7,13 +7,11 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
-
 from jx_base.expressions import ToTextOp as ToTextOp_, SelectOp, CoalesceOp
 from jx_base.language import is_op
 from jx_sqlite.expressions._utils import check, SQLang
-from jx_sqlite.expressions.sql_script import SQLScript
-from jx_sqlite.sqlite import (
+from jx_sqlite.expressions.sql_script import SqlScript
+from mo_sqlite import (
     SQL_CASE,
     SQL_ELSE,
     SQL_END,
@@ -22,24 +20,24 @@ from jx_sqlite.sqlite import (
     sql_iso,
     ConcatSQL, sql_cast,
 )
-from jx_sqlite.sqlite import quote_value, sql_call
-from mo_json import T_TEXT, T_BOOLEAN, T_NUMBER_TYPES, split_field, base_type
+from mo_sqlite import quote_value, sql_call
+from mo_json import JX_TEXT, JX_BOOLEAN, JX_NUMBER_TYPES, split_field, base_type
 
 
 class ToTextOp(ToTextOp_):
     @check
     def to_sql(self, schema):
         expr = self.term.to_sql(schema)
-        type = base_type(expr.type)
-        if type == T_TEXT:
+        type = base_type(expr.jx_type)
+        if type == JX_TEXT:
             return expr
-        elif type == T_BOOLEAN:
-            return SQLScript(
-                data_type=T_TEXT,
+        elif type == JX_BOOLEAN:
+            return SqlScript(
+                jx_type=JX_TEXT,
                 expr=ConcatSQL(
                     SQL_CASE,
                     SQL_WHEN,
-                    sql_iso(expr.frum),
+                    sql_iso(expr.expr),
                     SQL_THEN,
                     quote_value("true"),
                     SQL_ELSE,
@@ -49,14 +47,14 @@ class ToTextOp(ToTextOp_):
                 frum=self,
                 schema=schema,
             )
-        elif type in T_NUMBER_TYPES:
-            return SQLScript(
-                data_type=T_TEXT,
+        elif type in JX_NUMBER_TYPES:
+            return SqlScript(
+                jx_type=JX_TEXT,
                 expr=sql_call(
                     "RTRIM",
                     sql_call(
                         "RTRIM",
-                        sql_cast(expr.frum, "TEXT"),
+                        sql_cast(expr.expr, "TEXT"),
                         quote_value("0"),
                     ),
                     quote_value("."),
@@ -65,15 +63,15 @@ class ToTextOp(ToTextOp_):
                 schema=schema,
             )
         elif is_op(expr.frum, SelectOp) and len(expr.frum.terms) > 1:
-            return CoalesceOp([
-                ToTextOp(t['value'])
+            return CoalesceOp(*(
+                ToTextOp(t.value)
                 for t in expr.frum.terms
-                if len(split_field(t['name'])) == 1
-            ]).partial_eval(SQLang).to_sql(schema)
+                if len(split_field(t.name)) == 1
+            )).partial_eval(SQLang).to_sql(schema)
         else:
-            return SQLScript(
-                data_type=T_TEXT,
-                expr=sql_cast(expr.frum, "TEXT"),
+            return SqlScript(
+                jx_type=JX_TEXT,
+                expr=sql_cast(expr.expr, "TEXT"),
                 frum=self,
                 schema=schema,
             )

@@ -7,22 +7,20 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
-
 from jx_base.expressions import (
-    BasicStartsWithOp as BasicStartsWithOp_,
+    BasicStartsWithOp as _BasicStartsWithOp,
     is_literal,
     FALSE,
 )
-from jx_sqlite.expressions._utils import SQLang, check, SQLScript
+from jx_sqlite.expressions._utils import SQLang, check, SqlScript
 from jx_sqlite.expressions.sql_eq_op import SqlEqOp
 from jx_sqlite.expressions.sql_instr_op import SqlInstrOp
-from jx_sqlite.sqlite import SQL, ConcatSQL, SQL_LIKE, SQL_ESCAPE, SQL_ONE
-from jx_sqlite.sqlite import quote_value
-from mo_json.types import T_BOOLEAN
+from mo_sqlite import SQL, ConcatSQL, SQL_LIKE, SQL_ESCAPE, SQL_ONE
+from mo_sqlite import quote_value
+from mo_json.types import JX_BOOLEAN
 
 
-class BasicStartsWithOp(BasicStartsWithOp_):
+class BasicStartsWithOp(_BasicStartsWithOp):
     @check
     def to_sql(self, schema):
         prefix = self.prefix.partial_eval(SQLang)
@@ -37,12 +35,12 @@ class BasicStartsWithOp(BasicStartsWithOp_):
                 )
             else:
                 sql = ConcatSQL(value, SQL_LIKE, quote_value(prefix + "%"))
-            return SQLScript(
-                data_type=T_BOOLEAN, expr=sql, frum=self, miss=FALSE, schema=schema
+            return SqlScript(
+                jx_type=JX_BOOLEAN, expr=sql, frum=self, miss=FALSE, schema=schema
             )
         else:
             return (
-                SqlEqOp([SqlInstrOp([self.value, prefix]), SQL_ONE])
+                SqlEqOp(SqlInstrOp(self.value, prefix), SQL_ONE)
                 .partial_eval(SQLang)
                 .to_sql()
             )

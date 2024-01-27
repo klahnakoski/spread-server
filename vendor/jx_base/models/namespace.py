@@ -7,7 +7,7 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
+
 
 from jx_base.expressions import QueryOp
 from mo_dots import is_data
@@ -47,6 +47,9 @@ class Namespace(object):
         raise NotImplementedError()
 
     def _convert_window(self, clause):
+        raise NotImplementedError()
+
+    def get_tables(self):
         raise NotImplementedError()
 
 

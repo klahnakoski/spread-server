@@ -8,7 +8,6 @@
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
 
-from __future__ import absolute_import, division, unicode_literals
 
 from jx_base.expressions.expression import Expression
 from mo_future import is_text
@@ -26,14 +25,13 @@ class ScriptOp(Expression):
             Log.error("expecting text of a script")
         self.simplified = True
         self.script = script
-        self.data_type = data_type
+        self._jx_type = data_type
 
     @classmethod
     def define(cls, expr):
         if ALLOW_SCRIPTING:
             Log.warning(
-                "Scripting has been activated:  This has known security holes!!\nscript"
-                " = {{script|quote}}",
+                "Scripting has been activated:  This has known security holes!!\nscript = {{script|quote}}",
                 script=expr.script.term,
             )
             return ScriptOp(expr.script)
@@ -45,9 +43,6 @@ class ScriptOp(Expression):
 
     def map(self, map_):
         return self
-
-    def __unicode__(self):
-        return self.script
 
     def __str__(self):
         return str(self.script)

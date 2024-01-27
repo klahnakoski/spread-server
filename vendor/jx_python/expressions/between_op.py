@@ -7,10 +7,10 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
-
-from jx_base.expressions import BetweenOp as BetweenOp_
 
 
-class BetweenOp(BetweenOp_):
+from jx_base.expressions import BetweenOp as _BetweenOp
+
+
+class BetweenOp(_BetweenOp):
     pass

@@ -7,39 +7,15 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-
-from __future__ import absolute_import, division, unicode_literals
-
-from jx_base.expressions.expression import Expression
-from jx_base.expressions.false_op import FALSE
-from jx_base.language import is_op
-from mo_json.types import T_BOOLEAN
+from jx_base.expressions.base_inequality_op import BaseInequalityOp
 
 
-class BasicEqOp(Expression):
+class BasicEqOp(BaseInequalityOp):
     """
     PLACEHOLDER FOR BASIC `==` OPERATOR (CAN NOT DEAL WITH NULLS)
     """
+    op = "basic.eq"
 
-    data_type = T_BOOLEAN
 
-    def __init__(self, *terms):
-        Expression.__init__(self, terms)
-        self.lhs, self.rhs = terms
-
-    def __data__(self):
-        return {"basic.eq": [self.lhs.__data__(), self.rhs.__data__()]}
-
-    def missing(self, lang):
-        return FALSE
-
-    def vars(self):
-        return self.lhs.vars() | self.rhs.vars()
-
-    def map(self, map_):
-        return BasicEqOp([self.lhs.map(map_), self.rhs.map(map_)])
-
-    def __eq__(self, other):
-        if not is_op(other, BasicEqOp):
-            return False
-        return self.lhs == other.lhs and self.rhs == other.rhs
+    def __call__(self, row, rownum=None, rows=None):
+        return self.lhs(row, rownum, rows) == self.rhs(row, rownum, rows)

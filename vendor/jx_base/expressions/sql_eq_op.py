@@ -8,20 +8,18 @@
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
 
-from __future__ import absolute_import, division, unicode_literals
 
-from jx_base.expressions.eq_op import EqOp
 from jx_base.expressions.expression import Expression
 from jx_base.expressions.false_op import FALSE
 from jx_base.language import is_op
-from mo_json.types import T_BOOLEAN
+from mo_json.types import JX_BOOLEAN
 
 
 class SqlEqOp(Expression):
-    data_type = T_BOOLEAN
+    _jx_type = JX_BOOLEAN
 
     def __init__(self, *terms):
-        Expression.__init__(self, terms)
+        Expression.__init__(self, *terms)
         self.lhs, self.rhs = terms
 
     def __data__(self):
@@ -31,6 +29,6 @@ class SqlEqOp(Expression):
         return FALSE
 
     def __eq__(self, other):
-        if not is_op(other, EqOp):
+        if not is_op(other, SqlEqOp):
             return False
         return self.lhs == other.lhs and self.rhs == other.rhs

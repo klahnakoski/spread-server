@@ -7,16 +7,24 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-
-
-from __future__ import absolute_import, division, unicode_literals
-
-from jx_base.expressions import TRUE, Variable, SelectOp, LeavesOp, CountOp
+from jx_base.expressions import Variable, SelectOp, LeavesOp, CountOp, DefaultOp
+from jx_base.expressions.variable import is_variable
 from jx_base.language import is_op
 from jx_python import jx
 from jx_sqlite.edges_table import EdgesTable
 from jx_sqlite.expressions._utils import SQLang
-from jx_sqlite.sqlite import (
+from jx_sqlite.utils import (
+    ColumnMapping,
+    _make_column_name,
+    get_column,
+    sql_aggs,
+    PARENT,
+    UID,
+    table_alias,
+)
+from mo_dots import split_field, startswith_field, relative_field, unliteral_field, tail_field, concat_field
+from mo_json import jx_type_to_json_type, JX_INTEGER
+from mo_sqlite import (
     SQL_FROM,
     SQL_GROUPBY,
     SQL_IS_NULL,
@@ -36,26 +44,12 @@ from jx_sqlite.sqlite import (
     SQL_DESC,
     SQL_COMMA,
 )
-from jx_sqlite.sqlite import quote_column, sql_alias, sql_call
-from jx_sqlite.utils import (
-    ColumnMapping,
-    _make_column_name,
-    get_column,
-    sql_aggs,
-    PARENT,
-    UID,
-    table_alias,
-)
-from mo_dots import split_field, startswith_field, relative_field, concat_field, join_field, unliteral_field
-from mo_json import json_type_to_simple_type, T_INTEGER
+from mo_sqlite import quote_column, sql_alias, sql_call
 
 
 class GroupbyTable(EdgesTable):
     def _groupby_op(self, query, schema):
-        base_table = schema.snowflake.fact_name
-        path = schema.nested_path
-        # base_table, path = tail_field(frum)
-        # schema = self.snowflake.tables[path].schema
+        path = schema.nested_path[0]
         index_to_column = {}
         nest_to_alias = {
             nested_path: table_alias(i)
@@ -68,13 +62,13 @@ class GroupbyTable(EdgesTable):
         tables = jx.sort(tables, {"value": {"length": "nest"}})
 
         from_sql = [sql_alias(
-            quote_column(base_table, *split_field(tables[0].nest)), tables[0].alias
+            quote_column(*split_field(tables[0].nest)), tables[0].alias
         )]
         previous = tables[0]
         for t in tables[1::]:
             from_sql.append(ConcatSQL(
                 SQL_LEFT_JOIN,
-                quote_column(base_table, *split_field(t.nest)),
+                quote_column(*split_field(t.nest)),
                 t.alias,
                 SQL_ON,
                 quote_column(t.alias, PARENT),
@@ -86,55 +80,42 @@ class GroupbyTable(EdgesTable):
         groupby = []
         column_index = 0
         for edge in query.groupby:
+            top = edge['name'] != "."
             edge_sql = edge.value.partial_eval(SQLang).to_sql(schema)
-            if is_op(edge.value, LeavesOp):
-                for name, value, aggregate in edge_sql.frum:
-                    edge_sql = value.to_sql(schema)
+            if is_op(edge_sql.frum, SelectOp):
+                for t in edge_sql.frum.terms:
+                    name, value = t.name, t.value
+                    if top:
+                        top_name = edge["name"]
+                        end_name = relative_field(name, edge['name'])
+                    else:
+                        top_name, end_name = tail_field(name)
                     column_number = len(selects)
-                    data_type = json_type_to_simple_type(edge_sql.data_type)
+
+                    part_edge_sql = value.to_sql(schema)
+                    json_type = jx_type_to_json_type(part_edge_sql.jx_type)
 
                     column_alias = _make_column_name(column_number)
-                    groupby.append(edge_sql)
-                    selects.append(sql_alias(edge_sql, column_alias))
+                    groupby.append(part_edge_sql)
+                    selects.append(sql_alias(part_edge_sql, column_alias))
                     index_to_column[column_number] = ColumnMapping(
                         is_edge=True,
-                        push_list_name=name,
-                        push_column_name=unliteral_field(name),
+                        push_list_name=top_name,
+                        push_column_name=unliteral_field(top_name),
                         push_column_index=column_index,
-                        push_column_child=".",
-                        pull=get_column(column_number, data_type),
-                        sql=edge_sql,
+                        push_column_child=end_name,
+                        pull=get_column(column_number, json_type),
+                        sql=part_edge_sql,
                         column_alias=column_alias,
-                        type=data_type,
+                        type=json_type,
                     )
+                    if not top:
+                        column_index += 1
+                if top:
                     column_index += 1
-            elif is_op(edge_sql.frum, SelectOp):
-                fields = [
-                    (t["name"], t["value"].to_sql(schema))
-                    for t in edge_sql.frum.terms
-                ]
-                for name, edge_sql in fields:
-                    column_number = len(selects)
-                    data_type = json_type_to_simple_type(edge_sql.data_type)
-
-                    column_alias = _make_column_name(column_number)
-                    groupby.append(edge_sql)
-                    selects.append(sql_alias(edge_sql, column_alias))
-                    index_to_column[column_number] = ColumnMapping(
-                        is_edge=True,
-                        push_list_name=edge["name"],
-                        push_column_name=unliteral_field(edge["name"]),
-                        push_column_index=column_index,
-                        push_column_child=relative_field(name, edge["name"]),
-                        pull=get_column(column_number, data_type),
-                        sql=edge_sql,
-                        column_alias=column_alias,
-                        type=data_type,
-                    )
-                column_index += 1
             else:
                 column_number = len(selects)
-                data_type = json_type_to_simple_type(edge_sql.data_type)
+                json_type = jx_type_to_json_type(edge_sql.jx_type)
 
                 column_alias = _make_column_name(column_number)
                 groupby.append(edge_sql)
@@ -145,10 +126,10 @@ class GroupbyTable(EdgesTable):
                     push_column_name=unliteral_field(edge["name"]),
                     push_column_index=column_index,
                     push_column_child=".",
-                    pull=get_column(column_number, data_type),
+                    pull=get_column(column_number, json_type),
                     sql=edge_sql,
                     column_alias=column_alias,
-                    type=data_type,
+                    type=json_type,
                 )
                 column_index += 1
 
@@ -156,37 +137,36 @@ class GroupbyTable(EdgesTable):
             column_number = len(selects)
 
             # AGGREGATE
+            base_agg = select.aggregate
             if (
-                is_op(select["value"], Variable)
-                and select["value"].var == "."
-                and is_op(select["aggregate"], CountOp)
+                is_variable(select.value)
+                and select.value.var == "."
+                and is_op(base_agg, CountOp)
             ):
                 sql = sql_count(SQL_ONE)
-                data_type = T_INTEGER
+                json_type = JX_INTEGER
             else:
-                sql = select["value"].partial_eval(SQLang).to_sql(schema)
-                data_type = sql.frum.type
-                sql = sql_call(sql_aggs[select["aggregate"].op], sql)
+                sql = select.value.partial_eval(SQLang).to_sql(schema)
+                json_type = sql.frum.jx_type
+                sql = sql_call(sql_aggs[base_agg.op], sql)
 
-            if (
-                select["aggregate"].default.missing(SQLang) != TRUE
-            ):
+            if is_op(select.aggregate, DefaultOp):
                 sql = sql_coalesce([
                     sql,
-                    select["aggregate"].default.partial_eval(SQLang).to_sql(schema),
+                    select.default.partial_eval(SQLang).to_sql(schema),
                 ])
 
-            selects.append(sql_alias(sql, select["name"]))
+            selects.append(sql_alias(sql, select.name))
 
             index_to_column[column_number] = ColumnMapping(
-                push_list_name=select["name"],
-                push_column_name=select["name"],
+                push_list_name=select.name,
+                push_column_name=select.name,
                 push_column_index=column_index,
                 push_column_child=".",
-                pull=get_column(column_number),
+                pull=get_column(column_number, default=select.default),
                 sql=sql,
-                column_alias=select["name"],
-                type=json_type_to_simple_type(data_type),
+                column_alias=select.name,
+                type=jx_type_to_json_type(json_type),
             )
             column_index += 1
 

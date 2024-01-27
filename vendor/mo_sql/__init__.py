@@ -5,9 +5,6 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this file,
 # You can obtain one at http://mozilla.org/MPL/2.0/.
 #
-
-from __future__ import absolute_import, division, unicode_literals
-
 from mo_future import is_text, first
 from mo_logs import Log
 
@@ -213,6 +210,7 @@ SQL_SET = ConcatSQL(SQL_CR, SQL("SET"), SQL_CR)
 
 SQL_ALTER_TABLE = SQL("ALTER TABLE ")
 SQL_ADD_COLUMN = SQL(" ADD COLUMN ")
+SQL_DROP_COLUMN = SQL(" DROP COLUMN ")
 SQL_RENAME_COLUMN = SQL(" RENAME COLUMN ")
 SQL_RENAME_TO = SQL(" RENAME TO ")
 

@@ -7,48 +7,22 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
+from jx_base.expressions.and_op import AndOp
 
-from jx_base.expressions import (
-    FALSE,
-    FalseOp,
-    NULL,
-    NullOp,
-    TrueOp,
-    extend,
-    TRUE,
-)
 from jx_base.expressions._utils import TYPE_CHECK
+from jx_base.expressions import FalseOp, FALSE, CoalesceOp, ZERO, ONE
+from jx_base.expressions.null_op import NULL, NullOp
+from jx_base.expressions.true_op import TrueOp, TRUE
 from jx_base.language import Language
-from jx_sqlite.sqlite import (
-    SQL,
-    SQL_FALSE,
-    SQL_NULL,
-    SQL_TRUE,
-    sql_iso,
-    SQL_ZERO,
-    SQL_ONE,
-    SQL_PLUS,
-    SQL_STAR,
-    SQL_LT,
-    ConcatSQL,
-    SQL_AS,
-    SQL_SELECT,
-    SQL_FROM,
-    SQL_WITH,
-    SQL_DIV,
-    SQL_GT,
-    SQL_LE,
-    SQL_GE,
-)
-from jx_sqlite.sqlite import sql_call
-from mo_future import decorate
+from mo_future import decorate, extend
 from mo_imports import expect
 from mo_json import BOOLEAN, ARRAY, OBJECT, STRING, NUMBER, IS_NULL, TIME, INTERVAL
-from mo_json.types import T_IS_NULL, T_BOOLEAN, T_NUMBER, T_TIME, T_INTERVAL, T_TEXT
-from mo_logs import Log
+from mo_json.types import JX_IS_NULL, JX_BOOLEAN, JX_NUMBER, JX_TIME, JX_INTERVAL, JX_TEXT, JX_INTEGER
+from mo_sql import *
+from mo_sql.utils import SQL_IS_NULL_KEY, SQL_BOOLEAN_KEY, SQL_NUMBER_KEY, SQL_TIME_KEY, SQL_INTERVAL_KEY, \
+    SQL_STRING_KEY, SQL_OBJECT_KEY, SQL_ARRAY_KEY
 
-ToNumberOp, OrOp, SQLScript = expect("ToNumberOp", "OrOp", "SQLScript")
+ToNumberOp, OrOp, SqlScript = expect("ToNumberOp", "OrOp", "SqlScript")
 
 
 def check(func):
@@ -65,9 +39,9 @@ def check(func):
         except Exception as e:
             # output = func(self, schema)
             raise Log.error("not expected", cause=e)
-        if not isinstance(output, SQLScript):
+        if not isinstance(output, SqlScript):
             output = func(self, schema)
-            Log.error("expecting SQLScript")
+            Log.error("expecting SqlScript")
         return output
 
     return to_sql
@@ -76,39 +50,39 @@ def check(func):
 @extend(NullOp)
 @check
 def to_sql(self, schema):
-    return SQLScript(
-        data_type=T_IS_NULL, expr=SQL_NULL, frum=self, miss=TRUE, schema=schema
+    return SqlScript(
+        jx_type=JX_IS_NULL, expr=SQL_NULL, frum=self, miss=TRUE, schema=schema
     )
 
 
 @extend(TrueOp)
 @check
 def to_sql(self, schema):
-    return SQLScript(
-        data_type=T_BOOLEAN, expr=SQL_TRUE, frum=self, miss=FALSE, schema=schema
+    return SqlScript(
+        jx_type=JX_BOOLEAN, expr=SQL_TRUE, frum=self, miss=FALSE, schema=schema
     )
 
 
 @extend(FalseOp)
 @check
 def to_sql(self, schema):
-    return SQLScript(
-        data_type=T_BOOLEAN, expr=SQL_FALSE, frum=self, miss=FALSE, schema=schema
+    return SqlScript(
+        jx_type=JX_BOOLEAN, expr=SQL_FALSE, frum=self, miss=FALSE, schema=schema
     )
 
 
 def _inequality_to_sql(self, schema):
-    op, identity = _sql_operators[self.op]
+    iso, op, identity, jx_type = _sql_operators[self.op]
 
     lhs = ToNumberOp(self.lhs).partial_eval(SQLang).to_sql(schema)
     rhs = ToNumberOp(self.rhs).partial_eval(SQLang).to_sql(schema)
 
     sql = sql_call(
-        "COALESCE", ConcatSQL(sql_iso(lhs.frum), op, sql_iso(rhs.frum)), SQL_ZERO
+        "COALESCE", ConcatSQL(sql_iso(lhs.expr), op, sql_iso(rhs.expr)), SQL_ZERO
     )
 
-    return SQLScript(
-        data_type=T_BOOLEAN, expr=sql, frum=self, miss=FALSE, schema=schema
+    return SqlScript(
+        jx_type=JX_BOOLEAN, expr=sql, frum=self, miss=FALSE, schema=schema
     )
 
 
@@ -119,31 +93,34 @@ def _binaryop_to_sql(self, schema):
     lhs = ToNumberOp(self.lhs).partial_eval(SQLang).to_sql(schema)
     rhs = ToNumberOp(self.rhs).partial_eval(SQLang).to_sql(schema)
 
-    sql = ConcatSQL(sql_iso(lhs.frum), op, sql_iso(rhs.frum))
-    missing = OrOp([self.lhs.missing(SQLang), self.rhs.missing(SQLang),])
+    sql = ConcatSQL(sql_iso(lhs.expr), op, sql_iso(rhs.expr))
+    missing = OrOp(self.lhs.missing(SQLang), self.rhs.missing(SQLang))
 
-    return SQLScript(
-        data_type=T_NUMBER, expr=sql, frum=self, miss=missing, schema=schema,
+    return SqlScript(
+        jx_type=JX_NUMBER, expr=sql, frum=self, miss=missing, schema=schema,
     )
 
 
 def multiop_to_sql(self, schema):
-    sign, zero = _sql_operators[self.op]
+    iso, sign, zero, jx_type = _sql_operators[self.op]
     if len(self.terms) == 0:
-        return self.default.partial_eval(SQLang).to_sql(schema)
-    elif self.default is NULL:
-        return sign.join(
-            sql_call("COALESCE", t.partial_eval(SQLang).to_sql(schema), zero)
-            for t in self.terms
-        )
+        return NULL.to_sql(schema)
+
+    if self.decisive:
+        miss = AndOp(*(t.missing(SQLang) for t in self.terms))
+        temp = [CoalesceOp(t, zero).partial_eval(SQLang).to_sql(schema).expr for t in self.terms]
+        expr = iso(sign.join(sql_iso(t) for t in temp))
     else:
-        return sql_call(
-            "COALESCE",
-            sign.join(
-                sql_iso(t.partial_eval(SQLang).to_sql(schema)) for t in self.terms
-            ),
-            self.default.partial_eval(SQLang).to_sql(schema),
-        )
+        miss = OrOp(*(t.missing(SQLang) for t in self.terms), nulls=True)
+        expr = iso(sign.join(sql_iso(t.partial_eval(SQLang).to_sql(schema)) for t in self.terms))
+
+    return SqlScript(
+        jx_type=jx_type,
+        expr=expr,
+        frum=self,
+        miss=miss,
+        schema=schema
+    )
 
 
 def with_var(var, expression, eval):
@@ -168,10 +145,10 @@ def with_var(var, expression, eval):
 
 
 def basic_multiop_to_sql(self, schema, many=False):
-    op, identity = _sql_operators[self.op.split("basic.")[1]]
-    sql = op.join(sql_iso(t.partial_eval(SQLang).to_sql(schema)) for t in self.terms)
-    return SQLScript(
-        data_type=T_NUMBER,
+    iso, op, identity, jx_type = _sql_operators[self.op.split("basic.")[1]]
+    sql = iso(op.join(sql_iso(t.partial_eval(SQLang).to_sql(schema)) for t in self.terms))
+    return SqlScript(
+        jx_type=jx_type,
         frum=self,
         expr=sql,
         miss=FALSE,  # basic operations are "strict"
@@ -181,53 +158,37 @@ def basic_multiop_to_sql(self, schema, many=False):
 
 SQLang = Language("SQLang")
 
-
 _sql_operators = {
     # (operator, zero-array default value) PAIR
-    "add": (SQL_PLUS, SQL_ZERO),
-    "sum": (SQL_PLUS, SQL_ZERO),
-    "mul": (SQL_STAR, SQL_ONE),
-    "sub": (SQL(" - "), None),
-    "div": (SQL_DIV, None),
-    "exp": (SQL(" ** "), None),
-    "mod": (SQL(" % "), None),
-    "gt": (SQL_GT, None),
-    "gte": (SQL_GE, None),
-    "lte": (SQL_LE, None),
-    "lt": (SQL_LT, None),
+    "add": (sql_iso, SQL_PLUS, ZERO, JX_NUMBER),
+    "sum": (sql_iso, SQL_PLUS, ZERO, JX_NUMBER),
+    "mul": (sql_iso, SQL_STAR, ONE, JX_NUMBER),
+    "sub": (sql_iso, SQL(" - "), None, JX_NUMBER),
+    "div": (sql_iso, SQL_DIV, NULL, JX_NUMBER),
+    "exp": (sql_iso, SQL(" ** "), NULL, JX_NUMBER),
+    "mod": (sql_iso, SQL(" % "), NULL, JX_NUMBER),
+    "gt": (sql_iso, SQL_GT, NULL, JX_BOOLEAN),
+    "gte": (sql_iso, SQL_GE, NULL, JX_BOOLEAN),
+    "lte": (sql_iso, SQL_LE, NULL, JX_BOOLEAN),
+    "lt": (sql_iso, SQL_LT, NULL, JX_BOOLEAN),
+    "most": (lambda x: ConcatSQL(SQL("MAX"), SQL_OP, x, SQL_CP), SQL_COMMA, NULL, JX_NUMBER),
+    "least": (lambda x: ConcatSQL(SQL("MIN"), SQL_OP, x, SQL_CP), SQL_COMMA, NULL, JX_NUMBER),
+    "tally": (sql_iso, SQL_PLUS, ZERO, JX_INTEGER),
 }
 
-SQL_IS_NULL_KEY = "0"
-SQL_BOOLEAN_KEY = "b"
-SQL_NUMBER_KEY = "n"
-SQL_TIME_KEY = "t"
-SQL_INTERVAL_KEY = "n"
-SQL_STRING_KEY = "s"
-SQL_OBJECT_KEY = "j"
-SQL_ARRAY_KEY = "a"
 
-json_type_to_sql_type_key = {
-    IS_NULL: SQL_IS_NULL_KEY,
-    BOOLEAN: SQL_BOOLEAN_KEY,
-    NUMBER: SQL_NUMBER_KEY,
-    TIME: SQL_TIME_KEY,
-    INTERVAL: SQL_INTERVAL_KEY,
-    STRING: SQL_STRING_KEY,
-    OBJECT: SQL_OBJECT_KEY,
-    ARRAY: SQL_ARRAY_KEY,
-    T_IS_NULL: SQL_IS_NULL_KEY,
-    T_BOOLEAN: SQL_BOOLEAN_KEY,
-    T_NUMBER: SQL_NUMBER_KEY,
-    T_TIME: SQL_TIME_KEY,
-    T_INTERVAL: SQL_INTERVAL_KEY,
-    T_TEXT: SQL_STRING_KEY,
+_v2b = {
+    True: True,
+    "true": True,
+    "T": True,
+    1: True,
+    False: False,
+    "false": False,
+    "F": False,
+    0: False,
+    None: None
 }
 
-sql_type_key_to_json_type = {
-    None: None,
-    "0": IS_NULL,
-    "b": BOOLEAN,
-    "n": NUMBER,
-    "s": STRING,
-    "j": OBJECT,
-}
+
+def value2boolean(value):
+    return _v2b.get(value, True)

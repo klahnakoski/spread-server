@@ -7,11 +7,25 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
+import operator
+from functools import reduce
 
-from __future__ import absolute_import, division, unicode_literals
+from mo_dots import exists
 
 from jx_base.expressions.base_multi_op import BaseMultiOp
 
 
 class MulOp(BaseMultiOp):
-    op = "mul"
+    def __call__(self, row=None, rownum=None, rows=None):
+        if self.decisive:
+            return reduce(operator.mul, (v for t in self.terms for v in [t(row, rownum, rows)] if exists(v)))
+        else:
+            output = 1
+            for t in self.terms:
+                v = t(row, rownum, rows)
+                if exists(v):
+                    output *= v
+                else:
+                    return None
+            return output
+

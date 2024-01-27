@@ -7,50 +7,28 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
+
 
 from copy import copy
 from importlib import import_module
 
 import mo_math
-from jx_base.expressions.filter_op import _normalize_where
-from jx_base.models.dimensions import Dimension
 from jx_base.domains import DefaultDomain, Domain, SetDomain
 from jx_base.expressions._utils import jx_expression
 from jx_base.expressions.expression import Expression
 from jx_base.expressions.false_op import FALSE
+from jx_base.expressions.filter_op import _normalize_where
 from jx_base.expressions.leaves_op import LeavesOp
-from jx_base.expressions.count_op import CountOp
-from jx_base.expressions.literal import ZERO
 from jx_base.expressions.script_op import ScriptOp
-from jx_base.expressions.select_op import (
-    SelectOp,
-    _normalize_selects,
-)
-from mo_imports import export
+from jx_base.expressions.select_op import SelectOp, _normalize_selects, SelectOne, normalize_one
 from jx_base.expressions.variable import Variable
 from jx_base.language import is_expression, is_op
-from jx_base.utils import is_variable_name, coalesce
-from mo_dots import (
-    Data,
-    FlatList,
-    Null,
-    is_container,
-    listwrap,
-    is_data,
-    is_list,
-    set_default,
-    from_data,
-    unwraplist,
-    is_many,
-    dict_to_data,
-    to_data,
-    list_to_data,
-    tail_field,
-)
+from jx_base.models.dimensions import Dimension
+from jx_base.utils import is_variable_name, coalesce, delist, enlist
+from mo_dots import *
 from mo_future import is_text
 from mo_imports import expect
-from mo_json.typed_encoder import untype_path
+from mo_imports import export
 from mo_logs import Log
 from mo_math import AND, UNION
 
@@ -59,35 +37,41 @@ Column = expect("Column")
 BAD_SELECT = "Expecting `value` or `aggregate` in select clause not {{select}}"
 DEFAULT_LIMIT = 10
 MAX_LIMIT = 10000
-DEFAULT_SELECT = SelectOp([dict(
-    name="count", value=Variable("."), aggregate=CountOp(Variable(".")), default=ZERO
-)])
+DEFAULT_SELECT = (SelectOne(".", Variable(".")),)
 
 
 class QueryOp(Expression):
     __slots__ = [
         "frum",
+        "select",
         "edges",
+        "groupby",
+        "where",
         "window",
+        "sort",
+        "limit",
         "format",
         "chunk_size",
         "destination",
     ]
 
-    op = "from"
-
     def __init__(
         self,
         frum,
+        select: SelectOp = None,
         edges=None,
+        groupby=None,
         window=None,
+        where=None,
+        sort=None,
+        limit=None,
         format=None,
         chunk_size=None,
         destination=None,
     ):
         Expression.__init__(self, None)
         self.frum = frum
-        self.select: SelectOp = select if select is not None else SelectOp(frum, {"name":".", "value": IDENTITY})
+        self.select: SelectOp = select if select is not None else SelectOp(Null, *DEFAULT_SELECT)
         self.edges = edges
         self.groupby = groupby
         self.window = window
@@ -102,12 +86,7 @@ class QueryOp(Expression):
     def define(cls, expr):
         expr = to_data(expr)
         frum = expr["from"]
-        output = QueryOp(
-            frum=frum,
-            format=expr.format,
-            chunk_size=expr.chunk_size,
-            destination=expr.destination,
-        )
+        output = QueryOp(frum=frum, format=expr.format, chunk_size=expr.chunk_size, destination=expr.destination,)
 
         _import_temper_limit()
         limit = temper_limit(expr.limit, expr)
@@ -117,10 +96,7 @@ class QueryOp(Expression):
 
         select = from_data(expr).get("select")
         if expr.groupby and expr.edges:
-            raise Log.error(
-                "You can not use both the `groupby` and `edges` clauses in the same"
-                " query!"
-            )
+            raise Log.error("You can not use both the `groupby` and `edges` clauses in the same query!")
         elif expr.edges:
             if select is None:
                 select = [{"aggregate": "count"}]
@@ -146,24 +122,24 @@ class QueryOp(Expression):
             output.groupby = Null
 
         if is_many(select):
-            output.select = _normalize_selects(frum, select)
+            output.select = _normalize_selects(frum, select, expr.format)
         elif select or is_data(select):
-            output.select = normalize_one(select, frum, expr.format)
+            output.select = normalize_one(frum, select, expr.format)
             if expr.format == "list":
                 output.select.terms[0]["name"] = "."
         elif expr.edges or expr.groupby:
             output.select = DEFAULT_SELECT
         else:
-            output.select = normalize_one(".", frum, expr.format)
+            output.select = normalize_one(frum, ".", expr.format)
 
-        output.where = _normalize_where(expr.where)
-        output.window = [_normalize_window(w) for w in listwrap(expr.window)]
+        output.where = _normalize_where(expr.where, SQLang)
+        output.window = [_normalize_window(w) for w in enlist(expr.window)]
         output.sort = _normalize_sort(expr.sort)
 
         return output
 
     @staticmethod
-    def wrap(query, container):
+    def wrap(query, container, lang):
         """
         TODO: SHOULD BE QueryOp.define()
         NORMALIZE QUERY SO IT CAN STILL BE JSON
@@ -179,12 +155,7 @@ class QueryOp(Expression):
         frum = snowflake.get_table(query_path)
         schema = frum.schema
 
-        output = QueryOp(
-            frum=frum,
-            format=query.format,
-            chunk_size=query.chunk_size,
-            destination=query.destination,
-        )
+        output = QueryOp(frum=frum, format=query.format, chunk_size=query.chunk_size, destination=query.destination,)
 
         _import_temper_limit()
         limit = temper_limit(query.limit, query)
@@ -194,10 +165,7 @@ class QueryOp(Expression):
 
         select = from_data(query).get("select")
         if query.groupby and query.edges:
-            raise Log.error(
-                "You can not use both the `groupby` and `edges` clauses in the same"
-                " query!"
-            )
+            raise Log.error("You can not use both the `groupby` and `edges` clauses in the same query!")
         elif query.edges:
             if select is None:
                 select = [{"aggregate": "count"}]
@@ -206,9 +174,7 @@ class QueryOp(Expression):
             else:
                 select = [query.select]
 
-            output.edges = _normalize_edges(
-                query.edges, limit=output.limit, schema=schema
-            )
+            output.edges = _normalize_edges(query.edges, limit=output.limit, schema=schema)
             output.groupby = Null
         elif query.groupby:
             if select is None:
@@ -219,26 +185,24 @@ class QueryOp(Expression):
                 select = [query.select]
 
             output.edges = Null
-            output.groupby = _normalize_groupby(
-                query.groupby, limit=output.limit, schema=schema
-            )
+            output.groupby = _normalize_groupby(query.groupby, limit=output.limit, schema=schema)
         else:
             output.edges = Null
             output.groupby = Null
 
         if is_many(select):
-            output.select = _normalize_selects(frum, select)
+            output.select = _normalize_selects(Null, select, query.format)
         elif select or is_data(select):
-            output.select = normalize_one(frum, select)
+            output.select = normalize_one(Null, select, query.format)
             if query.format == "list":
-                output.select.terms[0]["name"] = "."
+                output.select.terms = (output.select.terms[0].set_name("."),)
         elif query.edges or query.groupby:
             output.select = DEFAULT_SELECT
         else:
-            output.select = normalize_one(".", frum, query.format)
+            output.select = SelectOp(Null, SelectOne(".", Variable(".")))
 
-        output.where = _normalize_where(query.where)
-        output.window = [_normalize_window(w) for w in listwrap(query.window)]
+        output.where = _normalize_where(query.where, lang)
+        output.window = [_normalize_window(w) for w in enlist(query.window)]
         output.sort = _normalize_sort(query.sort)
 
         return output
@@ -299,12 +263,12 @@ class QueryOp(Expression):
             pass
 
         output |= self.select.vars()
-        for s in listwrap(self.edges):
+        for s in enlist(self.edges):
             output |= edges_get_all_vars(s)
-        for s in listwrap(self.groupby):
+        for s in enlist(self.groupby):
             output |= edges_get_all_vars(s)
         output |= self.where.vars()
-        for s in listwrap(self.sort):
+        for s in enlist(self.sort):
             output |= s.value.vars()
 
         try:
@@ -319,10 +283,7 @@ class QueryOp(Expression):
             return set_default({"value": s.value.map(map_)}, s)
 
         def map_edge(e, map_):
-            partitions = unwraplist([
-                set_default({"where": p.where.map(map_)}, p)
-                for p in e.domain.partitions
-            ])
+            partitions = delist([set_default({"where": p.where.map(map_)}, p) for p in e.domain.partitions])
 
             domain = copy(e.domain)
             domain.where = e.domain.where.map(map_)
@@ -348,7 +309,7 @@ class QueryOp(Expression):
             groupby=list_to_data([g.map(map_) for g in self.groupby]),
             window=list_to_data([w.map(map_) for w in self.window]),
             where=self.where.map(map_),
-            sort=list_to_data([map_select(s, map_) for s in listwrap(self.sort)]),
+            sort=list_to_data([map_select(s, map_) for s in enlist(self.sort)]),
             limit=self.limit,
             format=self.format,
         )
@@ -358,7 +319,7 @@ class QueryOp(Expression):
 
     @property
     def columns(self):
-        return listwrap(self.select) + coalesce(self.edges, self.groupby)
+        return enlist(self.select) + coalesce(self.edges, self.groupby)
 
     @property
     def query_path(self):
@@ -366,7 +327,7 @@ class QueryOp(Expression):
 
     @property
     def column_names(self):
-        return listwrap(self.select).name + self.edges.name + self.groupby.name
+        return enlist(self.select).name + self.edges.name + self.groupby.name
 
     def __getitem__(self, item):
         if item == "from":
@@ -398,9 +359,7 @@ def _import_temper_limit():
 
 def _normalize_edges(edges, limit, schema=None):
     return list_to_data([
-        n
-        for ie, e in enumerate(listwrap(edges))
-        for n in _normalize_edge(e, ie, limit=limit, schema=schema)
+        n for ie, e in enumerate(enlist(edges)) for n in _normalize_edge(e, ie, limit=limit, schema=schema)
     ])
 
 
@@ -415,11 +374,11 @@ def _normalize_edge(edge, dim_index, limit, schema=None):
         Log.error("Edge has no value, or expression is empty")
     elif is_text(edge):
         if schema:
-            leaves = unwraplist([l for r, l in schema.leaves(edge)])
+            leaves = delist([l for r, l in schema.leaves(edge)])
             if not leaves or is_container(leaves):
                 return [Data(
                     name=edge,
-                    value=jx_expression(edge, schema=schema),
+                    value=jx_expression(edge),
                     allowNulls=True,
                     dim=dim_index,
                     domain=_normalize_domain(None, limit),
@@ -427,7 +386,7 @@ def _normalize_edge(edge, dim_index, limit, schema=None):
             elif isinstance(leaves, Column):
                 return [Data(
                     name=edge,
-                    value=jx_expression(edge, schema=schema),
+                    value=jx_expression(edge),
                     allowNulls=True,
                     dim=dim_index,
                     domain=_normalize_domain(domain=leaves, limit=limit, schema=schema),
@@ -435,25 +394,16 @@ def _normalize_edge(edge, dim_index, limit, schema=None):
             elif is_list(leaves.fields) and len(leaves.fields) == 1:
                 return [Data(
                     name=leaves.name,
-                    value=jx_expression(leaves.fields[0], schema=schema),
+                    value=jx_expression(leaves.fields[0]),
                     allowNulls=True,
                     dim=dim_index,
                     domain=leaves.getDomain(),
                 )]
             else:
-                return [Data(
-                    name=leaves.name,
-                    allowNulls=True,
-                    dim=dim_index,
-                    domain=leaves.getDomain(),
-                )]
+                return [Data(name=leaves.name, allowNulls=True, dim=dim_index, domain=leaves.getDomain(),)]
         else:
             return [Data(
-                name=edge,
-                value=jx_expression(edge, schema=schema),
-                allowNulls=True,
-                dim=dim_index,
-                domain=DefaultDomain(),
+                name=edge, value=jx_expression(edge), allowNulls=True, dim=dim_index, domain=DefaultDomain(),
             )]
     else:
         edge = to_data(edge)
@@ -467,7 +417,7 @@ def _normalize_edge(edge, dim_index, limit, schema=None):
 
             return [Data(
                 name=edge.name,
-                value=jx_expression(edge.value, schema=schema),
+                value=jx_expression(edge.value),
                 allowNulls=bool(coalesce(edge.allowNulls, True)),
                 dim=dim_index,
                 domain=domain,
@@ -477,7 +427,7 @@ def _normalize_edge(edge, dim_index, limit, schema=None):
 
         return [Data(
             name=coalesce(edge.name, edge.value),
-            value=jx_expression(edge.value, schema=schema),
+            value=jx_expression(edge.value) if edge.value else None,
             range=_normalize_range(edge.range),
             allowNulls=bool(coalesce(edge.allowNulls, True)),
             dim=dim_index,
@@ -488,11 +438,7 @@ def _normalize_edge(edge, dim_index, limit, schema=None):
 def _normalize_groupby(groupby, limit, schema=None):
     if groupby == None:
         return None
-    output = list_to_data([
-        n
-        for e in listwrap(groupby)
-        for n in _normalize_group(e, None, limit, schema=schema)
-    ])
+    output = list_to_data([n for e in enlist(groupby) for n in _normalize_group(e, None, limit, schema=schema)])
     for i, o in enumerate(output):
         o.dim = i
     if any(o == None for o in output):
@@ -519,7 +465,7 @@ def _normalize_group(edge, dim_index, limit, schema=None):
         elif edge.endswith(".*"):
             prefix = edge[:-2]
             return list_to_data([{
-                "name": untype_path(prefix),
+                "name": ".",
                 "value": LeavesOp(Variable(prefix)),
                 "allowNulls": True,
                 "dim": dim_index,
@@ -527,14 +473,14 @@ def _normalize_group(edge, dim_index, limit, schema=None):
             }])
         return list_to_data([{
             "name": edge,
-            "value": jx_expression(edge, schema=schema),
+            "value": jx_expression(edge),
             "allowNulls": True,
             "dim": dim_index,
             "domain": DefaultDomain(limit=limit, desc=edge),
         }])
     else:
         edge = to_data(edge)
-        if edge.domain and edge.domain.type != "default":
+        if edge.domain and edge.domain.jx_type != "default":
             Log.error("groupby does not accept complicated domains")
 
         if not edge.name and not is_text(edge.value):
@@ -542,7 +488,7 @@ def _normalize_group(edge, dim_index, limit, schema=None):
 
         return list_to_data([{
             "name": coalesce(edge.name, edge.value),
-            "value": jx_expression(edge.value, schema=schema),
+            "value": jx_expression(edge.value),
             "allowNulls": True,
             "dim": dim_index,
             "domain": DefaultDomain(limit=limit, desc=edge),
@@ -583,14 +529,12 @@ def _normalize_window(window, schema=None):
         name=coalesce(window.name, window.value),
         value=expr,
         edges=[
-            n
-            for i, e in enumerate(listwrap(window.edges))
-            for n in _normalize_edge(e, i, limit=None, schema=schema)
+            n for i, e in enumerate(enlist(window.edges)) for n in _normalize_edge(e, i, limit=None, schema=schema)
         ],
         sort=_normalize_sort(window.sort),
         aggregate=window.aggregate,
         range=_normalize_range(window.range),
-        where=_normalize_where(window.where, schema=schema),
+        where=_normalize_where(window.where, SQLang),
     )
 
 
@@ -636,9 +580,7 @@ def _map_term_using_schema(master, path, term, schema_edges):
                 if AND(is_variable_name(f) for f in dimension.fields):
                     # EXPECTING A TUPLE
                     if not isinstance(v, tuple):
-                        Log.error(
-                            "expecing {{name}}={{value}} to be a tuple", name=k, value=v
-                        )
+                        Log.error("expecing {{name}}={{value}} to be a tuple", name=k, value=v)
                     for i, f in enumerate(dimension.fields):
                         vv = v[i]
                         if vv == None:
@@ -710,25 +652,15 @@ def _where_terms(master, where, schema):
                                     and_agg.append({"term": {es_field: vvv}})
                             or_agg.append({"and": and_agg})
                         output.append({"or": or_agg})
-                    elif (
-                        is_list(fields)
-                        and len(fields) == 1
-                        and is_variable_name(fields[0])
-                    ):
+                    elif is_list(fields) and len(fields) == 1 and is_variable_name(fields[0]):
                         output.append({"terms": {fields[0]: v}})
                     elif domain.partitions:
-                        output.append({"or": [
-                            domain.getPartByKey(vv).esfilter for vv in v
-                        ]})
+                        output.append({"or": [domain.getPartByKey(vv).esfilter for vv in v]})
             return {"and": output}
         elif where["or"]:
-            return {"or": [
-                from_data(_where_terms(master, vv, schema)) for vv in where["or"]
-            ]}
+            return {"or": [from_data(_where_terms(master, vv, schema)) for vv in where["or"]]}
         elif where["and"]:
-            return {"and": [
-                from_data(_where_terms(master, vv, schema)) for vv in where["and"]
-            ]}
+            return {"and": [from_data(_where_terms(master, vv, schema)) for vv in where["and"]]}
         elif where["not"]:
             return {"not": from_data(_where_terms(master, where["not"], schema))}
     return where
@@ -743,16 +675,16 @@ def _normalize_sort(sort=None):
         return Null
 
     output = FlatList()
-    for s in listwrap(sort):
+    for s in enlist(sort):
         if is_text(s):
             output.append({"value": jx_expression(s), "sort": 1})
         elif is_expression(s):
             output.append({"value": s, "sort": 1})
         elif mo_math.is_integer(s):
             output.append({"value": jx_expression({"offset": s}), "sort": 1})
-        elif not s.sort and not s.value:
+        elif not s.get("sort") and not s.get("value"):
+            # {field: direction} format:  eg {"machine_name": "desc"}
             if all(d in sort_direction for d in s.values()):
-                # {field: direction} format:  eg {"machine_name": "desc"}
                 for v, d in s.items():
                     output.append({
                         "value": jx_expression(v),
@@ -762,8 +694,8 @@ def _normalize_sort(sort=None):
                 Log.error("`sort` clause must have a `value` property")
         else:
             output.append({
-                "value": jx_expression(coalesce(s.value, s.field)),
-                "sort": sort_direction[s.sort],
+                "value": jx_expression(coalesce(s.get("value"), s.get("field"))),
+                "sort": sort_direction[s.get("sort")],
             })
     return output
 

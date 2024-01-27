@@ -6,9 +6,6 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-
-from __future__ import absolute_import, division, unicode_literals
-
 from datetime import timedelta
 from time import time
 
@@ -38,7 +35,7 @@ class Timer(object):
     ):
         self.template = description
         self.param = to_data(coalesce(param, {}))
-        self.verbose = coalesce(verbose, False if silent is True else True)
+        self.verbose = coalesce(verbose, False if silent is True else too_long == 0)
         self.agg = 0
         self.too_long = too_long  # ONLY SHOW TIMING FOR DURATIONS THAT ARE too_long
         self.start = 0
@@ -46,8 +43,8 @@ class Timer(object):
         self.interval = None
 
     def __enter__(self):
-        if self.verbose and self.too_long == 0:
-            Log.note("Timer start: " + self.template, stack_depth=1, **self.param)
+        if self.verbose:
+            Log.note("Timer start: " + self.template, default_params=self.param, stack_depth=1, static_template=False)
         self.start = time()
         return self
 
@@ -62,12 +59,14 @@ class Timer(object):
                     "Timer end  : " + self.template + " (took {{duration}})",
                     default_params=self.param,
                     stack_depth=1,
+                    static_template=False,
                 )
             elif self.interval >= self.too_long:
                 Log.note(
                     "Time too long: " + self.template + " ({{duration}})",
                     default_params=self.param,
                     stack_depth=1,
+                    static_template=False,
                 )
 
     @property

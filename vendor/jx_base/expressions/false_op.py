@@ -8,17 +8,16 @@
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
 
-from __future__ import absolute_import, division, unicode_literals
 
 from jx_base.expressions.literal import Literal
 from mo_imports import export, expect
-from mo_json.types import T_BOOLEAN
+from mo_json.types import JX_BOOLEAN
 
 TRUE = expect("TRUE")
 
 
 class FalseOp(Literal):
-    data_type = T_BOOLEAN
+    _jx_type = JX_BOOLEAN
 
     def __new__(cls, *args, **kwargs):
         return object.__new__(cls, *args, **kwargs)
@@ -52,17 +51,14 @@ class FalseOp(Literal):
         return TRUE
 
     @property
-    def type(self):
-        return T_BOOLEAN
+    def jx_type(self):
+        return JX_BOOLEAN
 
     def __call__(self, row=None, rownum=None, rows=None):
         return False
 
-    def __unicode__(self):
-        return "false"
-
     def __str__(self):
-        return b"false"
+        return "false"
 
     def __bool__(self):
         return False

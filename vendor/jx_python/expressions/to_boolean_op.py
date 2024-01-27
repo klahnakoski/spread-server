@@ -7,12 +7,24 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
+from mo_dots import exists
 
-from jx_base.expressions import ToBooleanOp as ToBooleanOp_
-from jx_python.expressions._utils import with_var, Python
+from jx_base.expressions import ToBooleanOp as _ToBooleanOp, FALSE, PythonScript
+from jx_python.expressions._utils import with_var
+from jx_python.utils import merge_locals
+from mo_json import JX_BOOLEAN
 
 
-class ToBooleanOp(ToBooleanOp_):
-    def to_python(self, not_null=False, boolean=False, many=False):
-        return with_var("f", self.term.to_python(), "bool(f)",)
+class ToBooleanOp(_ToBooleanOp):
+    def to_python(self, loop_depth=0):
+        term = self.term.to_python(loop_depth)
+        if term.jx_type == JX_BOOLEAN and term.miss is FALSE:
+            return term
+        return PythonScript(
+            merge_locals(term.locals, exists=exists),
+            loop_depth,
+            JX_BOOLEAN,
+            with_var("f", term.source, "exists(f) and f is not False"),
+            self,
+            FALSE,
+        )

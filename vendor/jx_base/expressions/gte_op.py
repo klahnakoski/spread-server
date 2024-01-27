@@ -8,10 +8,9 @@
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
 
-from __future__ import absolute_import, division, unicode_literals
 
 from jx_base.expressions.base_inequality_op import BaseInequalityOp
 
 
 class GteOp(BaseInequalityOp):
-    op = "gte"
+    pass

@@ -8,10 +8,22 @@
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
 
-from __future__ import absolute_import, division, unicode_literals
-
 from jx_base.expressions.base_multi_op import BaseMultiOp
+from mo_dots import is_missing
 
 
 class AddOp(BaseMultiOp):
-    op = "add"
+    """
+    CONSERVATIVE ADDITION (SEE SumOp FOR DECISIVE ADDITION)
+    """
+    def __call__(self, row=None, rownum=None, rows=None):
+        output = 0
+        for t in self.terms:
+            v = t(row, rownum, rows)
+            if is_missing(v):
+                if self.decisive:
+                    continue
+                return None
+            else:
+                output += v
+        return output

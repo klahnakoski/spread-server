@@ -7,8 +7,6 @@
 #
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
-from __future__ import absolute_import, division, unicode_literals
-
 from jx_base.expressions.null_op import NULL
 
 from jx_base.expressions.literal import Literal
@@ -25,8 +23,8 @@ from jx_base.expressions import (
 )
 from jx_sqlite.expressions._utils import SQLang, check
 from jx_sqlite.expressions.length_op import LengthOp
-from jx_sqlite.expressions.sql_script import SQLScript
-from jx_sqlite.sqlite import (
+from jx_sqlite.expressions.sql_script import SqlScript
+from mo_sqlite import (
     SQL_CASE,
     SQL_ELSE,
     SQL_EMPTY_STRING,
@@ -37,29 +35,28 @@ from jx_sqlite.sqlite import (
     sql_concat_text,
     ConcatSQL,
 )
-from jx_sqlite.sqlite import sql_call
-from mo_json import T_TEXT
+from mo_sqlite import sql_call
+from mo_json import JX_TEXT
 
 
 class ConcatOp(ConcatOp_):
     @check
     def to_sql(self, schema):
-        default = self.default.to_sql(schema)
         if len(self.terms) == 0:
-            return default
+            return NULL.to_sql(schema)
         len_sep = LengthOp(self.separator).partial_eval(SQLang)
         no_sep = len_sep is NULL
         if no_sep:
             sep = None
         else:
-            sep = self.separator.partial_eval(SQLang).to_sql(schema).frum
+            sep = self.separator.partial_eval(SQLang).to_sql(schema).expr
 
         acc = []
         for t in self.terms:
             t = ToTextOp(t).partial_eval(SQLang)
             missing = t.missing(SQLang).partial_eval(SQLang)
 
-            term = t.to_sql(schema).frum
+            term = t.to_sql(schema).expr
 
             if no_sep:
                 sep_term = term
@@ -72,7 +69,7 @@ class ConcatOp(ConcatOp_):
                 acc.append(ConcatSQL(
                     SQL_CASE,
                     SQL_WHEN,
-                    missing.to_sql(schema).frum,
+                    missing.to_sql(schema).expr,
                     SQL_THEN,
                     SQL_EMPTY_STRING,
                     SQL_ELSE,
@@ -88,16 +85,16 @@ class ConcatOp(ConcatOp_):
             sql = sql_call(
                 "SUBSTR",
                 sql_concat_text(acc),
-                AddOp([ONE, LengthOp(self.separator)])
+                AddOp(ONE, LengthOp(self.separator), nulls=False)
                 .partial_eval(SQLang)
                 .to_sql(schema)
-                .frum,
+                .expr,
             )
 
-        return SQLScript(
-            data_type=T_TEXT,
+        return SqlScript(
+            jx_type=JX_TEXT,
             expr=sql,
             frum=self,
-            miss=AndOp([MissingOp(t) for t in self.terms]),
+            miss=AndOp(*(MissingOp(t) for t in self.terms), nulls=False),
             schema=schema,
         )

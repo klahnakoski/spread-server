@@ -8,7 +8,6 @@
 # Contact: Kyle Lahnakoski (kyle@lahnakoski.com)
 #
 
-from __future__ import absolute_import, division, unicode_literals
 
 from jx_base.expressions._utils import (
     operators,
@@ -20,24 +19,16 @@ from jx_base.models.container import Container
 from mo_dots import is_data, is_container
 from mo_future import items as items_
 from mo_imports import expect
-from mo_json import BOOLEAN, value2json, T_IS_NULL
+from mo_json import BOOLEAN, value2json, JX_IS_NULL, JxType
 from mo_logs import Log
 
 TRUE, FALSE, Literal, is_literal, MissingOp, NotOp, NULL, Variable, AndOp = expect(
-    "TRUE",
-    "FALSE",
-    "Literal",
-    "is_literal",
-    "MissingOp",
-    "NotOp",
-    "NULL",
-    "Variable",
-    "AndOp",
+    "TRUE", "FALSE", "Literal", "is_literal", "MissingOp", "NotOp", "NULL", "Variable", "AndOp",
 )
 
 
 class Expression(BaseExpression):
-    data_type = T_IS_NULL
+    _jx_type: JxType = JX_IS_NULL
     has_simple_form = False
 
     def __init__(self, *args):
@@ -73,15 +64,16 @@ class Expression(BaseExpression):
             else:
                 if not items:
                     return NULL
-                raise Log.error(
-                    "{{operator|quote}} is not a known operator", operator=expr
-                )
+                raise Log.error("{{operator|quote}} is not a known operator", operator=expr)
 
             if term == None:
                 return class_(**clauses)
             elif is_container(term):
-                terms = [jx_expression(t) for t in term]
-                return class_(*terms, **clauses)
+                terms = [_jx_expression(t, lang) for t in term]
+                try:
+                    return class_(*terms, **clauses)
+                except Exception as cause:
+                    raise cause
             elif is_data(term):
                 items = items_(term)
                 if class_.has_simple_form:
@@ -98,16 +90,8 @@ class Expression(BaseExpression):
                 else:
                     return class_(_jx_expression(term, lang), **clauses)
         except Exception as cause:
-            Log.warning(
-                "programmer error expr = {{value|quote}}", value=expr, cause=cause
-            )
-            Log.error(
-                "programmer error expr = {{value|quote}}", value=expr, cause=cause
-            )
-
-    @property
-    def name(self):
-        return self.__class__.__name__
+            Log.warning("programmer error expr = {{value|quote}}", value=expr, cause=cause)
+            Log.error("programmer error expr = {{value|quote}}", value=expr, cause=cause)
 
     def __data__(self):
         raise NotImplementedError
@@ -124,9 +108,9 @@ class Expression(BaseExpression):
         OVERRIDE THIS METHOD TO SIMPLIFY
         :return:
         """
-        if self.type == BOOLEAN:
+        if self.jx_type == BOOLEAN:
             Log.error("programmer error")
-        return self.lang.MissingOp(self)
+        return lang.MissingOp(self)
 
     def exists(self):
         """
@@ -170,11 +154,11 @@ class Expression(BaseExpression):
 
         :return: data, depending on the expression
         """
-        raise NotImplementedError()
+        return container.query(self)
 
     @property
-    def type(self):
-        return self.data_type
+    def jx_type(self) -> JxType:
+        return self._jx_type
 
     def __eq__(self, other):
         try:
@@ -202,9 +186,10 @@ class Expression(BaseExpression):
         return value2json(self.__data__())
 
     def __getattr__(self, item):
+        if item == "__json__":
+            raise AttributeError()
         Log.error(
-            "{{type}} object has no attribute {{item}}, did you .register_ops() for"
-            " {{type}}?",
+            """{{type}} object has no attribute {{item}}, did you .register_ops() for {{type}}?""",
             type=self.__class__.__name__,
             item=item,
         )
